@@ -2,16 +2,16 @@ import type { CSSProperties } from "react";
 
 import type { CategoricalField } from "./format";
 import type { ResolvedLayer } from "./layers";
-
-/** Opacity of an option's tint behind text, in percent: enough to tell the
- *  palette's hues apart, little enough that body text keeps its contrast in
- *  both themes. */
-const kOptionTintPercent = 30;
+import {
+  paletteColors,
+  textOn,
+  withAlpha,
+  type Palette,
+  type SchemeColors,
+} from "./schemes";
 
 /** Opacity of spans the legend's highlight leaves out. */
 const kDimmedOpacity = 0.3;
-
-const kPaletteSize = 8;
 
 /** The two options of a yes/no field, `["yes", "no"]` or `["1", "0"]` in
  *  either order: `on` gets a strong tint and `off` none. */
@@ -32,44 +32,49 @@ const binaryOptions = (
 
 interface OptionTint {
   color: string;
-  /** Options 9 to 16 reuse the palette's hues, hatched. */
+  /** Options past the palette's length reuse its hues, hatched. */
   hatched: boolean;
 }
 
 /** An option's tint, stable by its index in the field's options; undefined
- *  for the "no" of a yes/no field. Options past 16 share a neutral grey. */
+ *  for the "no" of a yes/no field. Options past twice the palette's length
+ *  share a neutral grey. */
 const optionTint = (
   field: CategoricalField,
-  option: string
+  option: string,
+  colors: SchemeColors
 ): OptionTint | undefined => {
   const binary = binaryOptions(field);
   if (binary) {
     return option === binary.on
-      ? { color: "var(--inspect-annotation-option-yes)", hatched: false }
+      ? { color: colors.yes, hatched: false }
       : undefined;
   }
   const index = field.options.indexOf(option);
+  const size = colors.options.length;
   if (index < 0) return undefined;
-  if (index >= 2 * kPaletteSize) {
-    return { color: "var(--inspect-annotation-option-none)", hatched: false };
+  const color = colors.options[index % size];
+  if (index >= 2 * size || color === undefined) {
+    return { color: colors.none, hatched: false };
   }
-  return {
-    color: `var(--inspect-annotation-option-${(index % kPaletteSize) + 1})`,
-    hatched: index >= kPaletteSize,
-  };
+  return { color, hatched: index >= size };
 };
 
-const mix = (color: string, percent: number): string =>
-  `color-mix(in srgb, ${color} ${percent}%, transparent)`;
-
-/** Hatched tints alternate the tint with a weaker stripe. */
-const tintBackground = ({ color, hatched }: OptionTint): CSSProperties => {
-  const solid = mix(color, kOptionTintPercent);
-  return hatched
-    ? {
-        backgroundImage: `repeating-linear-gradient(135deg, ${solid} 0 4px, ${mix(color, kOptionTintPercent / 3)} 4px 7px)`,
-      }
-    : { backgroundColor: solid };
+/** The tint behind the text, with black or white text on it; hatched tints
+ *  alternate the tint with a weaker stripe. */
+const tintStyle = (
+  { color, hatched }: OptionTint,
+  { scheme, dark }: Palette
+): CSSProperties => {
+  const solid = withAlpha(color, scheme.tint);
+  return {
+    color: textOn(color, scheme.tint, dark),
+    ...(hatched
+      ? {
+          backgroundImage: `repeating-linear-gradient(135deg, ${solid} 0 4px, ${withAlpha(color, scheme.tint / 3)} 4px 7px)`,
+        }
+      : { backgroundColor: solid }),
+  };
 };
 
 // Shared per tint, so React's style diff is a no-op for spans whose colour
@@ -77,22 +82,27 @@ const tintBackground = ({ color, hatched }: OptionTint): CSSProperties => {
 const kStyles = new Map<string, CSSProperties>();
 
 /**
- * A span's style for its option of `field`: the option's tint, faded when
- * `highlighted` leaves the option out. Undefined when there is neither.
+ * A span's style for its option of `field` in `palette`: the option's tint
+ * with readable text, faded when `highlighted` leaves the option out.
+ * Undefined when there is neither.
  */
 export const optionStyle = (
   field: CategoricalField,
   option: string | undefined,
-  highlighted: readonly string[]
+  highlighted: readonly string[],
+  palette: Palette
 ): CSSProperties | undefined => {
-  const tint = option === undefined ? undefined : optionTint(field, option);
+  const tint =
+    option === undefined
+      ? undefined
+      : optionTint(field, option, paletteColors(palette));
   const dimmed = isDimmed(highlighted, option);
   if (!tint && !dimmed) return undefined;
-  const key = `${tint?.color}|${tint?.hatched}|${dimmed}`;
+  const key = `${palette.scheme.id}|${palette.dark}|${tint?.color}|${tint?.hatched}|${dimmed}`;
   const cached = kStyles.get(key);
   if (cached) return cached;
   const style: CSSProperties = {
-    ...(tint ? tintBackground(tint) : {}),
+    ...(tint ? tintStyle(tint, palette) : {}),
     ...(dimmed ? { opacity: kDimmedOpacity } : {}),
   };
   kStyles.set(key, style);

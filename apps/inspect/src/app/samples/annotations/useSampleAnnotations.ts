@@ -11,8 +11,10 @@ import {
   annotationView,
   buildStrip,
   collectAnnotationLayers,
+  colorScheme,
   flashSpan,
   spanSelector,
+  stepColorScheme,
   warnAnnotations,
   type AnnotationView,
   type ResolvedLayer,
@@ -24,6 +26,7 @@ import { useProperty } from "@tsmono/react/hooks";
 import { kDefaultMessageRowOptions } from "../../../log_data";
 
 import { scrollToSpan } from "./scrollToSpan";
+import { useDarkTheme } from "./useDarkTheme";
 
 const kSelectionBag = "sample-annotations";
 const kNoHighlight: readonly string[] = [];
@@ -38,6 +41,8 @@ export interface SampleAnnotations {
   clearHighlight: () => void;
   /** Scrolls the messages list to a span and flashes it. */
   focusSpan: (location: SpanLocation) => void;
+  /** Moves to the next colour scheme (`step` 1) or the previous (-1). */
+  cycleScheme: (step: 1 | -1) => void;
 }
 
 interface AnnotationTargets {
@@ -65,6 +70,8 @@ export function useSampleAnnotations(
     kSelectionBag,
     "fields"
   );
+  const [schemeId, setSchemeId] = useProperty<string>(kSelectionBag, "scheme");
+  const palette = { scheme: colorScheme(schemeId), dark: useDarkTheme() };
   const [highlight, setHighlight] = useState<{
     layer: string;
     field: string;
@@ -90,7 +97,8 @@ export function useSampleAnnotations(
     field,
     highlight.layer === layer.id && highlight.field === field.name
       ? highlight.options
-      : kNoHighlight
+      : kNoHighlight,
+    palette
   );
   const { highlighted } = view;
   const strip = buildStrip(view, messageNumbers(sample.messages));
@@ -140,6 +148,8 @@ export function useSampleAnnotations(
       }),
     clearHighlight: () => setHighlight({ layer: "", field: "", options: [] }),
     focusSpan,
+    cycleScheme: (step) =>
+      setSchemeId(stepColorScheme(palette.scheme, step).id),
   };
 }
 

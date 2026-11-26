@@ -2,10 +2,7 @@ import type { CSSProperties } from "react";
 
 import type { NumericField } from "./format";
 import type { ResolvedLayer } from "./layers";
-
-/** Opacity of a span's background at full intensity: strong enough to
- *  read, weak enough that text keeps its contrast in both themes. */
-export const kMaxValueAlpha = 0.8;
+import { paletteColors, textOn, withAlpha, type Palette } from "./schemes";
 
 /** The quantile of |value| drawn at full colour: a few outliers clip
  *  instead of washing out every other span. */
@@ -70,35 +67,48 @@ export const quantile = (sorted: Float64Array, q: number): number => {
 export const valueIntensity = (value: number, scale: number): number =>
   scale > 0 ? Math.max(-1, Math.min(1, value / scale)) : 0;
 
-const kSteps = Math.round(kMaxValueAlpha * 100);
+/** Steps of opacity a shade is rounded to, so tens of thousands of spans
+ *  share a few hundred style objects and React's style diff is a no-op for
+ *  spans whose colour didn't change. */
+const kSteps = 100;
 
-const background = (hue: "positive" | "negative", percent: number): string =>
-  `color-mix(in srgb, var(--inspect-annotation-value-${hue}) ${percent}%, transparent)`;
+const kStyles = new Map<string, (CSSProperties | undefined)[]>();
 
-// One shared style per sign and opacity percent, so tens of thousands of
-// spans reuse a few hundred objects and React's style diff is a no-op for
-// spans whose colour didn't change.
-const kStyles = {
-  positive: Array.from({ length: kSteps + 1 }, (_, p) =>
-    p === 0 ? undefined : { backgroundColor: background("positive", p) }
-  ),
-  negative: Array.from({ length: kSteps + 1 }, (_, p) =>
-    p === 0 ? undefined : { backgroundColor: background("negative", p) }
-  ),
-} satisfies Record<string, (CSSProperties | undefined)[]>;
+/** The shades of one sign's hue in `palette`, from clear to full. */
+const shades = (
+  palette: Palette,
+  sign: "negative" | "positive"
+): (CSSProperties | undefined)[] => {
+  const key = `${palette.scheme.id}|${palette.dark}|${sign}`;
+  const cached = kStyles.get(key);
+  if (cached) return cached;
+  const hue = paletteColors(palette)[sign];
+  const styles = Array.from({ length: kSteps + 1 }, (_, step) => {
+    if (step === 0) return undefined;
+    const alpha = (step / kSteps) * palette.scheme.maxShade;
+    return {
+      backgroundColor: withAlpha(hue, alpha),
+      color: textOn(hue, alpha, palette.dark),
+    };
+  });
+  kStyles.set(key, styles);
+  return styles;
+};
 
 /**
- * A span's background: the hue of its sign at an opacity proportional to
- * |value| / scale, up to `kMaxValueAlpha`, in whole percent. Undefined
- * when that rounds to nothing, so zero stays uncoloured.
+ * A span's background in `palette`: the hue of its sign at an opacity
+ * proportional to |value| / scale, up to the scheme's `maxShade`, with
+ * black or white text, whichever reads better on it. Undefined when that
+ * rounds to nothing, so zero stays uncoloured.
  */
 export const valueStyle = (
   value: number,
-  scale: number
+  scale: number,
+  palette: Palette
 ): CSSProperties | undefined => {
   const intensity = valueIntensity(value, scale);
-  const percent = Math.round(Math.abs(intensity) * kSteps);
-  return (intensity > 0 ? kStyles.positive : kStyles.negative)[percent];
+  const step = Math.round(Math.abs(intensity) * kSteps);
+  return shades(palette, intensity > 0 ? "positive" : "negative")[step];
 };
 
 /** A value in three significant figures, switching to exponent notation

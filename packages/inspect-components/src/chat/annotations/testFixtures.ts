@@ -2,6 +2,7 @@ import { testScore } from "@tsmono/inspect-common/testing";
 import type { ChatMessage, Score } from "@tsmono/inspect-common/types";
 
 import { collectAnnotationLayers, type ResolvedLayer } from "./layers";
+import { colorScheme, type Palette } from "./schemes";
 import { annotationView, type AnnotationView } from "./view";
 
 // Raw `text_annotations` data for this module's tests: the format is JSON
@@ -85,9 +86,10 @@ export const resolvedLayer = (
 export const viewOf = (
   layer: ResolvedLayer,
   name: string,
-  highlight: readonly string[] = []
+  highlight: readonly string[] = [],
+  palette: Palette = { scheme: colorScheme("default"), dark: false }
 ): AnnotationView => {
   const field = layer.fields.find((f) => f.name === name);
   if (!field) throw new Error(`no field ${name}`);
-  return annotationView(layer, field, highlight);
+  return annotationView(layer, field, highlight, palette);
 };

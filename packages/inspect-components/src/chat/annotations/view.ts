@@ -4,6 +4,7 @@ import { optionStyle } from "./categorical";
 import type { AnnotationField } from "./format";
 import type { ResolvedLayer, ResolvedPart } from "./layers";
 import { fieldScale, formatValue, valueStyle } from "./numeric";
+import type { Palette } from "./schemes";
 
 /** The annotation layer on screen and the field that colours its spans. */
 export interface AnnotationView {
@@ -15,6 +16,8 @@ export interface AnnotationView {
   /** The magnitude drawn at full colour for a numeric `field`; 0 for a
    *  categorical one. */
   scale: number;
+  /** The colour scheme and theme the spans are drawn in. */
+  palette: Palette;
 }
 
 const kNone: readonly string[] = [];
@@ -24,7 +27,8 @@ const kNone: readonly string[] = [];
 export const annotationView = (
   layer: ResolvedLayer,
   field: AnnotationField,
-  highlight: readonly string[]
+  highlight: readonly string[],
+  palette: Palette
 ): AnnotationView => {
   if (field.type === "numeric") {
     return {
@@ -32,6 +36,7 @@ export const annotationView = (
       field,
       highlighted: kNone,
       scale: fieldScale(layer, field),
+      palette,
     };
   }
   const highlighted = highlight.filter((o) => field.options.includes(o));
@@ -40,6 +45,7 @@ export const annotationView = (
     field,
     highlighted: highlighted.length > 0 ? highlighted : kNone,
     scale: 0,
+    palette,
   };
 };
 
@@ -51,8 +57,17 @@ export const spanStyle = (
 ): CSSProperties | undefined => {
   const { field } = view;
   return field.type === "categorical"
-    ? optionStyle(field, part.labels.get(field.name)?.[span], view.highlighted)
-    : valueStyle(part.values.get(field.name)?.[span] ?? 0, view.scale);
+    ? optionStyle(
+        field,
+        part.labels.get(field.name)?.[span],
+        view.highlighted,
+        view.palette
+      )
+    : valueStyle(
+        part.values.get(field.name)?.[span] ?? 0,
+        view.scale,
+        view.palette
+      );
 };
 
 export interface OptionProbability {

@@ -15,6 +15,8 @@ export type { CollectedLayers, ResolvedLayer, ResolvedPart } from "./layers";
 export { collectAnnotationLayers, warnAnnotations } from "./layers";
 
 export type { AnnotationView } from "./view";
+export type { ColorScheme, Palette } from "./schemes";
+export { colorScheme, kColorSchemes, stepColorScheme } from "./schemes";
 export { annotationView } from "./view";
 
 export type { SpanLocation, StripSegment } from "./strip";

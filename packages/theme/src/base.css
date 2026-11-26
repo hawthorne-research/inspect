@@ -87,27 +87,6 @@
   --inspect-msg-label-border: #e4e4e9;
   --inspect-msg-label-text: #5f5f68;
 
-  /* Text annotations, categorical fields: tints behind text, assigned by
-     option index (CVD-checked order); a strong "yes"/"1" (its "no"/"0" is
-     untinted), and a neutral for options past the palette. */
-  --inspect-annotation-option-1: #2a78d6;
-  --inspect-annotation-option-2: #eb6834;
-  --inspect-annotation-option-3: #1baf7a;
-  --inspect-annotation-option-4: #eda100;
-  --inspect-annotation-option-5: #e87ba4;
-  --inspect-annotation-option-6: #008300;
-  --inspect-annotation-option-7: #6250d6;
-  --inspect-annotation-option-8: #e34948;
-  --inspect-annotation-option-yes: #eb6834;
-  --inspect-annotation-option-none: #a9abaf;
-
-  /* Text annotations, numeric fields: a diverging pair drawn as
-     backgrounds behind text at up to 80% opacity, clear at zero. Each
-     keeps body text at >= 5:1 contrast at full intensity on the body
-     background. */
-  --inspect-annotation-value-negative: #257de0;
-  --inspect-annotation-value-positive: #ec4647;
-
   /* Tool block (header/edge/zones) tokens: neutral by default so the
      design-consistent look holds when Event Colors is off; the readable
      variant points them at the colored tool tokens below. The left edges
@@ -161,20 +140,6 @@
   --inspect-msg-label-bg-hover: #33333a;
   --inspect-msg-label-border: #3a3a40;
   --inspect-msg-label-text: #b4b4bd;
-
-  --inspect-annotation-option-1: #3987e5;
-  --inspect-annotation-option-2: #d95926;
-  --inspect-annotation-option-3: #199e70;
-  --inspect-annotation-option-4: #c98500;
-  --inspect-annotation-option-5: #d55181;
-  --inspect-annotation-option-6: #008300;
-  --inspect-annotation-option-7: #9085e9;
-  --inspect-annotation-option-8: #e66767;
-  --inspect-annotation-option-yes: #d95926;
-  --inspect-annotation-option-none: #67696f;
-
-  --inspect-annotation-value-negative: #1b64be;
-  --inspect-annotation-value-positive: #c0392b;
 
   --inspect-readable-user-bg: #262421;
   --inspect-readable-user-border: #8e8881;

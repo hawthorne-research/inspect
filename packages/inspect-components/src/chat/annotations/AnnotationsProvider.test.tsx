@@ -27,6 +27,7 @@ import { AnnotationLegend } from "./AnnotationLegend";
 import { AnnotationsProvider } from "./AnnotationsProvider";
 import { kPartAttribute, kSpanAttribute } from "./dom";
 import type { ResolvedLayer } from "./layers";
+import { colorScheme, type Palette } from "./schemes";
 import { buildStrip } from "./strip";
 import {
   kindField,
@@ -92,10 +93,20 @@ const kLayer = rawLayer({
 
 const renderAnnotated = (
   fieldName: string,
-  { layers, highlight }: { layers?: ResolvedLayer[]; highlight?: string[] } = {}
+  {
+    layers,
+    highlight,
+    palette,
+    onCycleScheme,
+  }: {
+    layers?: ResolvedLayer[];
+    highlight?: string[];
+    palette?: Palette;
+    onCycleScheme?: (step: 1 | -1) => void;
+  } = {}
 ) => {
   const layer = resolvedLayer(kLayer, kMessages);
-  const view = viewOf(layer, fieldName, highlight);
+  const view = viewOf(layer, fieldName, highlight, palette);
   return render(
     <TrustedContentWrapper>
       <ComponentStateProvider hooks={makeStateHooks()}>
@@ -110,6 +121,7 @@ const renderAnnotated = (
               onToggleHighlight={() => {}}
               onClearHighlight={() => {}}
               onSelectSpan={() => {}}
+              onCycleScheme={onCycleScheme ?? (() => {})}
             />
             {resolveMessages(kMessages).map((resolved, index) => (
               <div key={index} data-testid={resolved.message.id}>
@@ -188,6 +200,16 @@ describe("annotated parts", () => {
     expect(spansIn(assistant)).toHaveLength(2);
   });
 
+  it("draw tinted spans with black or white text for their background", () => {
+    renderAnnotated("kind", {
+      palette: { scheme: colorScheme("high-contrast-saturated"), dark: false },
+    });
+    // u1's spans are mapping, mapping, task_work: solid red, red, then blue.
+    expect(spansIn(screen.getByTestId("u1")).map((s) => s.style.color)).toEqual(
+      ["rgb(0, 0, 0)", "rgb(0, 0, 0)", "rgb(255, 255, 255)"]
+    );
+  });
+
   it("fade the spans of options the legend's highlight leaves out", () => {
     renderAnnotated("kind", { highlight: ["task_work"] });
     expect(
@@ -263,6 +285,17 @@ describe("the legend", () => {
         .getAllByRole("option")
         .map((o) => o.textContent)
     ).toEqual(["probes · token", "paragraphs · paragraph"]);
+  });
+
+  it("names the colour scheme and cycles it forwards, or back on shift-click", () => {
+    const onCycleScheme = vi.fn();
+    renderAnnotated("kind", { onCycleScheme });
+    const button = screen.getByRole("button", {
+      name: /Colour scheme: Default/,
+    });
+    fireEvent.click(button);
+    fireEvent.click(button, { shiftKey: true });
+    expect(onCycleScheme.mock.calls).toEqual([[1], [-1]]);
   });
 
   it("sums up the layer's source, metadata and spans", () => {

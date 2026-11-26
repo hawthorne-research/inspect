@@ -1193,6 +1193,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                           onToggleHighlight={annotations.toggleHighlight}
                           onClearHighlight={annotations.clearHighlight}
                           onSelectSpan={annotations.focusSpan}
+                          onCycleScheme={annotations.cycleScheme}
                         />
                       </div>
                     ) : null}

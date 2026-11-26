@@ -136,12 +136,10 @@
 
 .positive {
   left: 50%;
-  background-color: var(--inspect-annotation-value-positive);
 }
 
 .negative {
   right: 50%;
-  background-color: var(--inspect-annotation-value-negative);
 }
 
 .number {

@@ -8,6 +8,7 @@ import { fieldLabel, type AnnotationField } from "./format";
 import type { ResolvedLayer, ResolvedPart } from "./layers";
 import { spanText } from "./layers";
 import { fieldScale, valueIntensity } from "./numeric";
+import { paletteColors, type Palette } from "./schemes";
 import styles from "./SpanTooltip.module.css";
 import { Swatch } from "./Swatch";
 import { spanStyle, spanValue, type AnnotationView } from "./view";
@@ -73,6 +74,7 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
             key={field.name}
             field={field}
             layer={view.layer}
+            palette={view.palette}
             part={part}
             span={span}
             swatch={
@@ -94,10 +96,11 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
 const FieldValue: FC<{
   field: AnnotationField;
   layer: ResolvedLayer;
+  palette: Palette;
   part: ResolvedPart;
   span: number;
   swatch: CSSProperties | undefined | null;
-}> = ({ field, layer, part, span, swatch }) => {
+}> = ({ field, layer, palette, part, span, swatch }) => {
   const value = spanValue(field, part, span);
   const active = swatch !== null;
   const name = (
@@ -118,7 +121,7 @@ const FieldValue: FC<{
     return (
       <div className={clsx(styles.row, active && styles.active)}>
         {name}
-        <DivergingBar intensity={intensity} />
+        <DivergingBar intensity={intensity} palette={palette} />
         <span className={styles.number}>{value.text}</span>
       </div>
     );
@@ -155,19 +158,28 @@ const FieldValue: FC<{
 
 /** A bar centred on zero, filled towards the value's sign by `intensity`
  *  (its share of full colour, in [-1, 1]) in the same hue as the text. */
-const DivergingBar: FC<{ intensity: number }> = ({ intensity }) => (
-  <span className={clsx(styles.bar, styles.diverging)}>
-    {intensity !== 0 ? (
-      <span
-        className={clsx(
-          styles.divergingFill,
-          intensity > 0 ? styles.positive : styles.negative
-        )}
-        style={{ width: `${Math.abs(intensity) * 50}%` }}
-      />
-    ) : null}
-  </span>
-);
+const DivergingBar: FC<{ intensity: number; palette: Palette }> = ({
+  intensity,
+  palette,
+}) => {
+  const { negative, positive } = paletteColors(palette);
+  return (
+    <span className={clsx(styles.bar, styles.diverging)}>
+      {intensity !== 0 ? (
+        <span
+          className={clsx(
+            styles.divergingFill,
+            intensity > 0 ? styles.positive : styles.negative
+          )}
+          style={{
+            width: `${Math.abs(intensity) * 50}%`,
+            backgroundColor: intensity > 0 ? positive : negative,
+          }}
+        />
+      ) : null}
+    </span>
+  );
+};
 
 const formatProbability = (p: number): string =>
   p > 0 && p < 0.01 ? "<1%" : `${Math.round(p * 100)}%`;

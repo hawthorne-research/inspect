@@ -8,6 +8,9 @@ import {
   valueIntensity,
   valueStyle,
 } from "./numeric";
+import { colorScheme, withAlpha, type Palette } from "./schemes";
+
+const light: Palette = { scheme: colorScheme("default"), dark: false };
 
 describe("magnitudeScale", () => {
   it("is the 99th percentile of |value| across every part", () => {
@@ -49,26 +52,39 @@ describe("value colour", () => {
 
   it("colours nothing when the scale is 0", () => {
     expect(valueIntensity(5, 0)).toBe(0);
-    expect(valueStyle(5, 0)).toBeUndefined();
+    expect(valueStyle(5, 0, light)).toBeUndefined();
   });
 
   it("leaves zero uncoloured", () => {
-    expect(valueStyle(0, 4)).toBeUndefined();
+    expect(valueStyle(0, 4, light)).toBeUndefined();
   });
 
-  it("uses the sign's hue at an opacity up to 80%", () => {
-    expect(valueStyle(2, 4)?.backgroundColor).toBe(
-      "color-mix(in srgb, var(--inspect-annotation-value-positive) 40%, transparent)"
+  it("uses the sign's hue at an opacity up to the scheme's maximum", () => {
+    const { negative, positive } = light.scheme.light;
+    expect(valueStyle(2, 4, light)?.backgroundColor).toBe(
+      withAlpha(positive, 0.4)
     );
-    expect(valueStyle(-100, 4)?.backgroundColor).toBe(
-      "color-mix(in srgb, var(--inspect-annotation-value-negative) 80%, transparent)"
+    expect(valueStyle(-100, 4, light)?.backgroundColor).toBe(
+      withAlpha(negative, 0.8)
     );
   });
 
   it("gives equal magnitudes equal opacity on both sides", () => {
     const opacity = (value: number) =>
-      valueStyle(value, 3)?.backgroundColor?.match(/(\d+)%/)?.[1];
+      valueStyle(value, 3, light)?.backgroundColor?.match(/([\d.]+)\)$/)?.[1];
     expect(opacity(1)).toBe(opacity(-1));
+  });
+
+  it("puts black text on faint shades and white text on strong dark ones", () => {
+    const saturated: Palette = {
+      scheme: colorScheme("high-contrast-saturated"),
+      dark: false,
+    };
+    expect(valueStyle(-100, 4, saturated)).toEqual({
+      backgroundColor: "rgba(0, 0, 255, 1)",
+      color: "#ffffff",
+    });
+    expect(valueStyle(-0.2, 4, saturated)?.color).toBe("#000000");
   });
 });
 

@@ -15,6 +15,7 @@ import {
 import type { ResolvedLayer } from "./layers";
 import { formatValue } from "./numeric";
 import { OverviewStrip } from "./OverviewStrip";
+import { paletteColors, withAlpha, type Palette } from "./schemes";
 import { SpanTooltip } from "./SpanTooltip";
 import type { SpanLocation, StripSegment } from "./strip";
 import { Swatch } from "./Swatch";
@@ -35,6 +36,8 @@ interface AnnotationLegendProps {
   onToggleHighlight: (option: string) => void;
   onClearHighlight: () => void;
   onSelectSpan: (location: SpanLocation) => void;
+  /** Moves to the next colour scheme (`step` 1) or the previous (-1). */
+  onCycleScheme: (step: 1 | -1) => void;
 }
 
 /**
@@ -51,6 +54,7 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
   onToggleHighlight,
   onClearHighlight,
   onSelectSpan,
+  onCycleScheme,
 }) => {
   const { layer, field } = view;
   return (
@@ -91,17 +95,19 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
           selected={field}
           onChange={onFieldChange}
         />
+        <SchemeButton palette={view.palette} onCycle={onCycleScheme} />
       </div>
       {field.type === "categorical" ? (
         <OptionKey
           layer={layer}
           field={field}
           highlighted={view.highlighted}
+          palette={view.palette}
           onToggle={onToggleHighlight}
           onClear={onClearHighlight}
         />
       ) : (
-        <ColorBar scale={view.scale} />
+        <ColorBar scale={view.scale} palette={view.palette} />
       )}
       <OverviewStrip
         segments={strip}
@@ -198,9 +204,10 @@ const OptionKey: FC<{
   layer: ResolvedLayer;
   field: CategoricalField;
   highlighted: readonly string[];
+  palette: Palette;
   onToggle: (option: string) => void;
   onClear: () => void;
-}> = ({ layer, field, highlighted, onToggle, onClear }) => (
+}> = ({ layer, field, highlighted, palette, onToggle, onClear }) => (
   <div className={styles.options} role="group" aria-label="Options">
     {countOptions(layer, field).map(({ option, count }) => {
       const active = highlighted.includes(option);
@@ -216,7 +223,7 @@ const OptionKey: FC<{
           )}
           onClick={() => onToggle(option)}
         >
-          <Swatch fill={optionStyle(field, option, [])} />
+          <Swatch fill={optionStyle(field, option, [], palette)} />
           {option}
           <span className={styles.count}>{count.toLocaleString()}</span>
         </button>
@@ -230,19 +237,64 @@ const OptionKey: FC<{
   </div>
 );
 
-const ColorBar: FC<{ scale: number }> = ({ scale }) =>
-  scale > 0 ? (
+const ColorBar: FC<{ scale: number; palette: Palette }> = ({
+  scale,
+  palette,
+}) => {
+  if (scale <= 0) {
+    return <span className={styles.noScale}>all values are 0</span>;
+  }
+  const { negative, positive } = paletteColors(palette);
+  const full = palette.scheme.maxShade;
+  return (
     <span
       className={styles.colorBar}
       title={`Values at or beyond ±${formatValue(scale)} (the 99th percentile of |value| for this field) get full colour`}
     >
-      <span className={styles.gradient} />
+      <span
+        className={styles.gradient}
+        style={{
+          backgroundImage: `linear-gradient(to right, ${withAlpha(negative, full)}, transparent 50%, ${withAlpha(positive, full)})`,
+        }}
+      />
       <span className={styles.ticks}>
         <span>{formatValue(-scale)}</span>
         <span>0</span>
         <span>{formatValue(scale)}</span>
       </span>
     </span>
-  ) : (
-    <span className={styles.noScale}>all values are 0</span>
   );
+};
+
+/** Shows the colour scheme's first hues and name; a click moves to the
+ *  next scheme, a shift-click to the previous one. */
+const SchemeButton: FC<{
+  palette: Palette;
+  onCycle: (step: 1 | -1) => void;
+}> = ({ palette, onCycle }) => (
+  <button
+    type="button"
+    className={styles.schemeButton}
+    title={`Colour scheme: ${palette.scheme.name}. Click for the next scheme, shift-click for the previous one.`}
+    aria-label={`Colour scheme: ${palette.scheme.name}. Next colour scheme`}
+    onClick={(e) => onCycle(e.shiftKey ? -1 : 1)}
+  >
+    <span className={styles.schemeSwatches} aria-hidden>
+      {paletteColors(palette)
+        .options.slice(0, 4)
+        .map((color) => (
+          <span
+            key={color}
+            className={styles.schemeSwatch}
+            style={{
+              backgroundColor: withAlpha(
+                color,
+                Math.max(palette.scheme.tint, 0.6)
+              ),
+            }}
+          />
+        ))}
+    </span>
+    {palette.scheme.name}
+  </button>
+);
