@@ -49,6 +49,19 @@ describe("MarkdownDiv render coordination", () => {
       );
     });
   });
+
+  it("marks its source placeholder pending until the render lands", async () => {
+    const { container } = render(
+      <MarkdownDiv markdown="pending **until rendered**" />
+    );
+    const div = container.querySelector(".markdown-content");
+    expect(div?.hasAttribute("data-markdown-pending")).toBe(true);
+
+    await waitFor(() => {
+      expect(div?.innerHTML).toContain("<strong>until rendered</strong>");
+    });
+    expect(div?.hasAttribute("data-markdown-pending")).toBe(false);
+  });
 });
 
 describe("MarkdownRenderQueue", () => {

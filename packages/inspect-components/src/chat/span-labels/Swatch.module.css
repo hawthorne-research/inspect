@@ -1,0 +1,6 @@
+.swatch {
+  flex: none;
+  width: 0.65em;
+  height: 0.65em;
+  border-radius: 50%;
+}

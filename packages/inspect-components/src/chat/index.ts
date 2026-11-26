@@ -64,6 +64,7 @@ export { ChatMessageRow } from "./ChatMessageRow";
 export type { ChatViewProps } from "./ChatView";
 export { ChatView } from "./ChatView";
 export type {
+  ChatViewListHandle,
   ChatViewRowsVirtualListProps,
   ChatViewVirtualListProps,
 } from "./ChatViewVirtualList";
@@ -71,3 +72,17 @@ export {
   ChatViewRowsVirtualList,
   ChatViewVirtualList,
 } from "./ChatViewVirtualList";
+
+// Paragraph-level span labels (classifier output stored in a sample score)
+export type {
+  LabelledSpan,
+  LoadedSpanLabels,
+  SpanLabelQuestion,
+  SpanLabels,
+} from "./span-labels/spanLabels";
+export { loadSpanLabels, warnSpanLabels } from "./span-labels/spanLabels";
+export type { SpanLabelsView } from "./span-labels/SpanLabelsContext";
+export { SpanLabelsContext } from "./span-labels/SpanLabelsContext";
+export { SpanLabelsLegend } from "./span-labels/SpanLabelsLegend";
+export type { StripSegment } from "./span-labels/stripSegments";
+export { buildStripSegments } from "./span-labels/stripSegments";

@@ -104,6 +104,39 @@ describe("FindBand", () => {
     expect(windowFind.mock.calls.every((call) => call[2] === true)).toBe(true);
   });
 
+  it("finds a match again once its markdown placeholder renders", async () => {
+    const { input } = renderFindBand(
+      vi.fn(),
+      <div data-testid="markdown" data-markdown-pending="">
+        needle in the source placeholder
+      </div>
+    );
+    const markdown = screen.getByTestId("markdown");
+    windowFind.mockImplementation(() => {
+      const text = document
+        .createTreeWalker(markdown, NodeFilter.SHOW_TEXT)
+        .nextNode();
+      const offset = text?.textContent?.indexOf("needle") ?? -1;
+      if (!text || offset < 0) return false;
+      const range = document.createRange();
+      range.setStart(text, offset);
+      range.setEnd(text, offset + "needle".length);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+      return true;
+    });
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(windowFind).toHaveBeenCalledTimes(1));
+    markdown.innerHTML = "<p>needle, rendered</p>";
+    markdown.removeAttribute("data-markdown-pending");
+
+    await waitFor(() => expect(windowFind).toHaveBeenCalledTimes(2));
+    const selected = window.getSelection()?.getRangeAt(0);
+    expect(selected?.toString()).toBe("needle");
+    expect(selected?.startContainer.parentElement?.tagName).toBe("P");
+  });
+
   it("intercepts Cmd+F with CapsLock (uppercase key) instead of native find", () => {
     const { input } = renderFindBand();
     input.blur();

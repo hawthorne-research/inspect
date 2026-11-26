@@ -1,0 +1,163 @@
+.paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.paragraph,
+.unlabelled {
+  padding: 0.1rem 0 0.1rem 0.6rem;
+  border-left: 3px solid transparent;
+  transition: opacity 120ms ease-in-out;
+}
+
+.paragraph {
+  position: relative;
+}
+
+/* Marks a paragraph the strip just scrolled to, then fades. */
+.flash {
+  position: absolute;
+  inset: -2px -4px -2px -3px;
+  border-radius: var(--bs-border-radius-sm);
+  box-shadow: 0 0 0 2px var(--bs-primary);
+  background-color: rgba(var(--bs-primary-rgb), 0.1);
+  pointer-events: none;
+  animation: flash 1.8s ease-out forwards;
+}
+
+@keyframes flash {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.paragraph:hover {
+  background-color: rgba(var(--bs-body-color-rgb), 0.03);
+}
+
+.unlabelled {
+  border-left-style: dashed;
+  border-left-color: var(--bs-border-color);
+}
+
+/* Each paragraph is its own markdown block; drop the trailing margin of
+   whatever block ends it (paragraph, list, code) so borders fit the text. */
+.markdown,
+.markdown > :last-child,
+.markdown :global(.markdown-content) > :last-child {
+  margin-bottom: 0;
+}
+
+.dimmed {
+  opacity: 0.3;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.2rem;
+  font-size: var(--inspect-font-size-smallest);
+  line-height: 1.5;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0 0.45em;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.primaryChip {
+  background-color: var(--inspect-msg-label-bg);
+  border-color: var(--inspect-msg-label-border);
+  color: var(--bs-body-color);
+  font-weight: 600;
+}
+
+.flagChip {
+  border-color: var(--inspect-span-label-yes);
+  color: var(--bs-body-color);
+}
+
+.mutedChip {
+  padding: 0 0.2em;
+  color: var(--bs-secondary-color);
+}
+
+.popover {
+  width: 340px;
+  padding: 0.5rem 0.6rem;
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.probabilities {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.questionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.questionName {
+  color: var(--bs-secondary-color);
+}
+
+.questionLabel {
+  font-weight: 600;
+}
+
+.optionRow {
+  display: grid;
+  grid-template-columns: 10rem 1fr 2.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--bs-secondary-color);
+  font-size: var(--inspect-font-size-smallest);
+}
+
+.chosenOption {
+  color: var(--bs-body-color);
+  font-weight: 600;
+}
+
+.optionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar {
+  height: 0.4rem;
+  border-radius: 2px;
+  background-color: rgba(var(--bs-body-color-rgb), 0.08);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  background-color: var(--bs-secondary-color);
+}
+
+.chosenOption .barFill {
+  background-color: var(--bs-body-color);
+}
+
+.percent {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

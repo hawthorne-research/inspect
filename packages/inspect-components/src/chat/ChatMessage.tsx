@@ -22,6 +22,8 @@ import { MessageContent } from "./MessageContent";
 import { MessageContents } from "./MessageContents";
 import { hasServerToolUse, Message } from "./messages";
 import { ServerToolCall } from "./server-tools/ServerToolCall";
+import { labelledReasoningParts } from "./span-labels/spanLabels";
+import { useSpanLabels } from "./span-labels/SpanLabelsContext";
 import {
   codexToolMarkdown,
   formatSubagentNotifications,
@@ -64,6 +66,14 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
   const messageUrl = getMessageUrl?.(message.id || "");
 
   const [mouseOver, setMouseOver] = useState(false);
+
+  // Labelled reasoning is what the reader came to see, so its message
+  // starts expanded rather than clipped.
+  const spanLabels = useSpanLabels();
+  const reasoningSpans = spanLabels
+    ? labelledReasoningParts(spanLabels.spansByPart, message)
+    : undefined;
+  const collapseContent = reasoningSpans === undefined;
 
   const isNonSubagentTool =
     message.role === "tool" &&
@@ -210,12 +220,13 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
               {segment.contents.length > 0 ? (
                 <ExpandablePanel
                   id={`${id}-message-${index}`}
-                  collapse={true}
+                  collapse={collapseContent}
                   lines={25}
                 >
                   <MessageContent
                     contents={segment.contents}
                     references={references}
+                    reasoningSpans={reasoningSpans}
                   />
                 </ExpandablePanel>
               ) : null}
@@ -253,7 +264,7 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
       >
         <ExpandablePanel
           id={`${id}-message`}
-          collapse={true}
+          collapse={collapseContent}
           lines={
             message.role === "tool"
               ? 30
@@ -286,6 +297,7 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
               key={`${id}-contents`}
               message={message}
               references={references}
+              reasoningSpans={reasoningSpans}
             />
           )}
         </ExpandablePanel>

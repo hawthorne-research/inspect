@@ -3,9 +3,11 @@ import {
   FC,
   memo,
   ReactNode,
+  Ref,
   RefObject,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -76,7 +78,15 @@ const kChatScrollPaddingStart = -15;
 // lands before the user reaches the footer.
 const kLoadMoreMarginRows = 20;
 
+/** Steers the list from its host. */
+export interface ChatViewListHandle {
+  /** Lands the row holding `messageId` at the top of the list, calling
+   *  `onDone` once the landing settles. False when no loaded row holds it. */
+  scrollToMessage(messageId: string, onDone?: () => void): boolean;
+}
+
 export interface ChatViewRowsVirtualListProps {
+  ref?: Ref<ChatViewListHandle>;
   id: string;
   rows: MessageRow[];
   /** A paged host's signal that `rows` is a loaded prefix, not the whole
@@ -116,6 +126,7 @@ export interface ChatViewRowsVirtualListProps {
  */
 export const ChatViewRowsVirtualList: FC<ChatViewRowsVirtualListProps> = memo(
   function ChatViewRowsVirtualList({
+    ref,
     id,
     rows,
     hasMoreRows,
@@ -135,6 +146,21 @@ export const ChatViewRowsVirtualList: FC<ChatViewRowsVirtualListProps> = memo(
     selection,
   }: ChatViewRowsVirtualListProps) {
     const listHandle = useRef<VirtualListHandle>(null);
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToMessage(messageId, onDone) {
+          const index = rows.findIndex((row) =>
+            rowContainsMessage(row, messageId)
+          );
+          if (index === -1 || !listHandle.current) return false;
+          listHandle.current.scrollToIndex({ index, align: "start", onDone });
+          return true;
+        },
+      }),
+      [rows]
+    );
 
     // Frozen at mount, mirroring TranscriptViewNodes: a ?message= landing owns
     // the scroll position, so follow must not auto-arm from a live sample.

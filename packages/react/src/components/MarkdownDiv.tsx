@@ -191,6 +191,11 @@ const RichMarkdownDiv = forwardRef<HTMLDivElement, MarkdownDivProps>(
       applyPostProcess,
     ]);
 
+    // Find waits for this to clear before selecting text here: the render
+    // replaces the placeholder's text nodes, which would collapse a
+    // selection made in them.
+    const pending = cachedHtml === undefined && renderedHtml === placeholder;
+
     return (
       // The container is not itself a control: onClick delegates for the
       // anchors inside the rendered markdown, which already fire click on
@@ -198,6 +203,7 @@ const RichMarkdownDiv = forwardRef<HTMLDivElement, MarkdownDivProps>(
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
       <div
         ref={ref}
+        data-markdown-pending={pending ? "" : undefined}
         dangerouslySetInnerHTML={{ __html: renderedHtml }}
         style={style}
         className={clsx(className, "markdown-content")}

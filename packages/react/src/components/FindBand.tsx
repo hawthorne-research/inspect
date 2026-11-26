@@ -430,6 +430,7 @@ async function findExtendedInDOM(
   let result = false;
   let hasTriedExtendedSearch = false;
   let extendedSearchSucceeded = false;
+  let waitedForRender = false;
   const maxAttempts = 25;
 
   for (let attempts = 0; attempts < maxAttempts; attempts++) {
@@ -439,6 +440,16 @@ async function findExtendedInDOM(
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
+        // A match in a markdown placeholder detaches when the render lands,
+        // before the band can scroll to it: wait, then find it again from
+        // just before where it was.
+        const pending = waitedForRender ? null : pendingMarkdown(range);
+        if (pending) {
+          waitedForRender = true;
+          range.collapse(!back);
+          await waitForMarkdownRender(pending);
+          continue;
+        }
         const isUnsearchable = inUnsearchableElement(range);
         const isSameAsLast = isLastFoundItem(range, lastFoundItem);
 
@@ -564,6 +575,35 @@ function isLastFoundItem(
   );
 }
 
+function pendingMarkdown(range: Range): Element | null {
+  return (
+    selectionParentElement(range)?.closest("[data-markdown-pending]") ?? null
+  );
+}
+
+function waitForMarkdownRender(
+  element: Element,
+  timeoutMs = 2000
+): Promise<void> {
+  return new Promise((resolve) => {
+    const interval = 50;
+    let elapsed = 0;
+    const check = () => {
+      if (
+        !element.isConnected ||
+        !element.hasAttribute("data-markdown-pending") ||
+        elapsed >= timeoutMs
+      ) {
+        resolve();
+        return;
+      }
+      elapsed += interval;
+      setTimeout(check, interval);
+    };
+    check();
+  });
+}
+
 function inUnsearchableElement(range: Range) {
   let element: Element | null = selectionParentElement(range);
 
@@ -623,7 +663,13 @@ function waitForTextInDOM(
         acceptNode: (node) => {
           let el = node.parentElement;
           while (el) {
-            if (el.hasAttribute("data-unsearchable")) {
+            // Markdown still showing its source placeholder is about to be
+            // replaced; a match selected in it would detach before the
+            // band scrolls to it, so wait for the render.
+            if (
+              el.hasAttribute("data-unsearchable") ||
+              el.hasAttribute("data-markdown-pending")
+            ) {
               return NodeFilter.FILTER_REJECT;
             }
             el = el.parentElement;

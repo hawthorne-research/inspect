@@ -17,6 +17,9 @@ import { EvalSample, EvalSpec } from "@tsmono/inspect-common/types";
 import { modelRoleNames } from "@tsmono/inspect-common/utils";
 import {
   ChatViewRowsVirtualList,
+  SpanLabelsContext,
+  SpanLabelsLegend,
+  type ChatViewListHandle,
   type MessageRow,
 } from "@tsmono/inspect-components/chat";
 import {
@@ -128,6 +131,7 @@ import { SampleSummaryView } from "./SampleSummaryView";
 import { ScansSidebarPanel } from "./scans/ScansSidebarPanel";
 import { useSampleScans } from "./scans/useSampleScans";
 import { SampleScoresView } from "./scores/SampleScoresView";
+import { useSampleSpanLabels } from "./span-labels/useSampleSpanLabels";
 import { AgentPicker } from "./terminals/AgentPicker";
 import { storeCasts } from "./terminals/asciicast";
 import {
@@ -304,6 +308,13 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
     messagesTabOpen ? sampleDetailNavigation.message : null
   );
   const exportMessages = useMessagesExport(sampleData);
+  const chatListRef = useRef<ChatViewListHandle>(null);
+  const spanLegendRef = useRef<HTMLDivElement>(null);
+  const spanLabels = useSampleSpanLabels(sample, {
+    list: chatListRef,
+    scroller: scrollRef,
+    legend: spanLegendRef,
+  });
 
   // Focus the panel when it loads
   // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
@@ -1158,26 +1169,50 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                     error={sampleMessages.rows.error}
                   />
                 ) : (
-                  <ChatViewRowsVirtualList
-                    key={chatListId}
-                    id={chatListId}
-                    rows={sampleMessages.rows.data ?? kNoMessageRows}
-                    hasMoreRows={sampleMessages.hasMore}
-                    onLoadMoreRows={sampleMessages.loadMore}
-                    initialMessageId={sampleDetailNavigation.message}
-                    followRequested={sampleDetailNavigation.follow}
-                    display={chatDisplay}
-                    labels={messagesSearchLabels}
-                    linking={chatLinking}
-                    onNativeFindChanged={setNativeFind}
-                    scrollRef={scrollRef}
-                    tools={chatTools}
-                    running={running}
-                    backfilling={backfilling || sampleMessages.rows.loading}
-                    scrollToTopOnFinish={scrollToTopOnFinish}
-                    className={styles.fullWidth}
-                    selection={evidence.listSelection}
-                  />
+                  <SpanLabelsContext.Provider value={spanLabels?.view}>
+                    {spanLabels ? (
+                      // In flow above the list, so the chat's landings
+                      // (which compensate for in-flow chrome) still clear it.
+                      // Tucked 1px under the tab bar: at a fractional offset
+                      // the shared edge leaves a seam that content shows
+                      // through.
+                      <div
+                        ref={spanLegendRef}
+                        className={styles.spanLabelsLegend}
+                        style={{ top: stickyOffsetTop - 1 }}
+                      >
+                        <SpanLabelsLegend
+                          view={spanLabels.view}
+                          segments={spanLabels.segments}
+                          onColorByChange={spanLabels.setColorBy}
+                          onToggleHighlight={spanLabels.toggleHighlight}
+                          onClearHighlight={spanLabels.clearHighlight}
+                          onSelectSegment={spanLabels.focusSegment}
+                        />
+                      </div>
+                    ) : null}
+                    <ChatViewRowsVirtualList
+                      ref={chatListRef}
+                      key={chatListId}
+                      id={chatListId}
+                      rows={sampleMessages.rows.data ?? kNoMessageRows}
+                      hasMoreRows={sampleMessages.hasMore}
+                      onLoadMoreRows={sampleMessages.loadMore}
+                      initialMessageId={sampleDetailNavigation.message}
+                      followRequested={sampleDetailNavigation.follow}
+                      display={chatDisplay}
+                      labels={messagesSearchLabels}
+                      linking={chatLinking}
+                      onNativeFindChanged={setNativeFind}
+                      scrollRef={scrollRef}
+                      tools={chatTools}
+                      running={running}
+                      backfilling={backfilling || sampleMessages.rows.loading}
+                      scrollToTopOnFinish={scrollToTopOnFinish}
+                      className={styles.fullWidth}
+                      selection={evidence.listSelection}
+                    />
+                  </SpanLabelsContext.Provider>
                 )}
               </RailSidebarHost>
             </TabPanel>
