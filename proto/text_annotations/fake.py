@@ -1,4 +1,4 @@
-"""A scorer that stores per-token probe values for a sample, and a fake probe runner."""
+"""A fake classifier and a fake probe runner, for building viewers and tests."""
 
 import hashlib
 import json
@@ -6,141 +6,99 @@ import math
 import random
 import re
 from bisect import bisect_right
-from collections.abc import Sequence
-from typing import NamedTuple, Protocol
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
-from inspect_ai.scorer import Metric, Score, Scorer, Target, mean, scorer, stderr
 from inspect_ai.solver import TaskState
 
-from .span_labels import TextRange
-from .token_values import (
-    TextPart,
-    TokenProbe,
-    TokenValues,
-    TokenValuesPart,
-    check_part_offsets,
-    describe_part,
-    text_parts,
-    token_offsets,
-)
-
-TOKEN_VALUES_KEY = "token_values"
-"""Key of the `TokenValues` in the score's metadata."""
-
-TOKEN_VALUE_METRICS: dict[str, list[Metric]] = {"*": [mean(), stderr()]}
-"""Mean over samples of each probe's mean value per sample."""
-
-DECIMALS = 3
-"""Decimals the stored values are rounded to."""
+from .annotations import CategoricalField, NumericField, TextPart, TextRange
+from .scorers import PartValues, ProbeRunner, SpanClassifier, SpanProbabilities
+from .tokens import token_offsets
 
 
-class PartValues(NamedTuple):
-    """The tokens of one text part and each probe's value on each token."""
-
-    offsets: list[TextRange]
-    """Code-point range of each token in the part's text."""
-    values: dict[str, list[float]]
-    """Probe name to its value on each token."""
+def seeded_random(*key: object) -> random.Random:
+    """A `random.Random` seeded with a SHA-256 digest of `key` as JSON."""
+    digest = hashlib.sha256(json.dumps(list(key)).encode()).digest()
+    return random.Random(int.from_bytes(digest[:8], "big"))
 
 
-class ProbeRunner(Protocol):
-    """Tokenises each text part and gives each probe's value on every token."""
+def random_classifier(
+    seed: str = "", concentration: float = 0.5, yes_rate: float = 0.1
+) -> SpanClassifier:
+    """Random, plausible-looking probabilities.
 
-    async def __call__(
-        self, parts: list[TextPart], probes: Sequence[TokenProbe], state: TaskState
-    ) -> list[PartValues]:
-        """Run the probes over the text parts of one sample.
+    Deterministic: each span's draws come from `seeded_random(seed, sample
+    id, epoch, index of the span in the sample)`.
 
-        Args:
-            parts: Text parts of the sample, in transcript order.
-            probes: Probes to run.
-            state: State of the sample the parts come from.
-
-        Returns:
-            One `PartValues` per part, in the same order.
-        """
-        ...
-
-
-@scorer(metrics=TOKEN_VALUE_METRICS)
-def token_values(
-    probes: Sequence[TokenProbe], run_probes: ProbeRunner, tokenizer_name: str
-) -> Scorer:
-    """Store each probe's value on every token of the sample's messages.
-
-    Every non-empty text of every message gets values (see `text_parts`),
-    rounded to `DECIMALS` decimals. The score's value maps each probe name to
-    its mean value over all tokens of the sample (0.0 if there are none),
-    and its metadata holds the `TokenValues` under `token_values`.
+    The probabilities for a question are a Dirichlet draw (normalised gamma
+    draws) with parameters `concentration * prior`, rounded to two decimals.
+    A small concentration gives peaked distributions whose most probable
+    option roughly follows the prior. For yes/no questions, whose options are
+    "yes" and "no" or "1" and "0", the prior of "yes" or "1" is `yes_rate`;
+    for other questions it falls off with the option's position (1, 1/2,
+    1/3, ... normalised), so earlier options are more common.
 
     Args:
-        probes: Probes to run.
-        run_probes: Gives the tokens and the probes' values for each part.
-        tokenizer_name: Tokenizer `run_probes` uses, e.g. "tiktoken/o200k_base".
+        seed: Extra seed text, e.g. the eval id, so that samples with the
+            same id in different logs get different labels.
+        concentration: Total of the Dirichlet parameters.
+        yes_rate: Prior probability of "yes" or "1" for yes/no questions.
     """
-    probes = list(probes)
-    # validates the probes now rather than at the first sample
-    TokenValues(tokenizer=tokenizer_name, probes=probes, parts=[])
 
-    async def score(state: TaskState, target: Target) -> Score:
-        sample = f"sample {state.sample_id} (epoch {state.epoch})"
-        parts = text_parts(state.messages)
-        results = await run_probes(parts, probes, state) if parts else []
-        if len(results) != len(parts):
-            raise ValueError(
-                f"Probe runner gave {len(results)} results for {len(parts)} text "
-                f"parts of {sample}"
+    async def classify(
+        texts: list[str], questions: Sequence[CategoricalField], state: TaskState
+    ) -> list[SpanProbabilities]:
+        results: list[SpanProbabilities] = []
+        for index in range(len(texts)):
+            rng = seeded_random(seed, state.sample_id, state.epoch, index)
+            results.append(
+                {
+                    question.name: _draw(rng, _prior(question, yes_rate), concentration)
+                    for question in questions
+                }
             )
-        value_parts: list[TokenValuesPart] = []
-        for part, result in zip(parts, results, strict=True):
-            try:
-                value_part = TokenValuesPart(
-                    message_id=part.message_id,
-                    content_index=part.content_index,
-                    starts=[offset.start for offset in result.offsets],
-                    ends=[offset.end for offset in result.offsets],
-                    values={
-                        name: [round(value, DECIMALS) for value in values]
-                        for name, values in result.values.items()
-                    },
-                )
-                check_part_offsets(value_part, part.text)
-            except ValueError as ex:
-                where = describe_part(part.message_id, part.content_index)
-                raise ValueError(
-                    f"Invalid probe values for the {where} of {sample}: {ex}"
-                ) from ex
-            value_parts.append(value_part)
-        try:
-            values = TokenValues(
-                tokenizer=tokenizer_name, probes=probes, parts=value_parts
-            )
-        except ValueError as ex:
-            raise ValueError(f"Invalid probe values for {sample}: {ex}") from ex
-        tokens = sum(len(part.starts) for part in values.parts)
-        return Score(
-            value=probe_means(values),
-            explanation=f"{plural(tokens, 'token')}, {plural(len(probes), 'probe')}",
-            metadata={TOKEN_VALUES_KEY: values.model_dump()},
-        )
+        return results
 
-    return score
+    return classify
 
 
-def probe_means(values: TokenValues) -> dict[str, float]:
-    """Each probe's mean value over all tokens of all parts (0.0 if none)."""
-    means: dict[str, float] = {}
-    for probe in values.probes:
-        all_values = [v for part in values.parts for v in part.values[probe.name]]
-        means[probe.name] = (
-            math.fsum(all_values) / len(all_values) if all_values else 0.0
-        )
-    return means
+def _prior(question: CategoricalField, yes_rate: float) -> dict[str, float]:
+    for positive, negative in (("yes", "no"), ("1", "0")):
+        if set(question.options) == {positive, negative}:
+            return {positive: yes_rate, negative: 1.0 - yes_rate}
+    weights = [1.0 / (position + 1) for position in range(len(question.options))]
+    return {
+        option: weight / sum(weights)
+        for option, weight in zip(question.options, weights, strict=True)
+    }
 
 
-def plural(count: int, noun: str) -> str:
-    """E.g. "1 token" or "3 tokens"."""
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+def _draw(
+    rng: random.Random, prior: Mapping[str, float], concentration: float
+) -> dict[str, float]:
+    draws = {
+        option: rng.gammavariate(concentration * weight, 1.0)
+        for option, weight in prior.items()
+    }
+    total = sum(draws.values())
+    if total == 0.0:
+        # every draw underflowed: put all the mass on one option
+        chosen = rng.choices(list(prior), weights=list(prior.values()))[0]
+        draws = {option: float(option == chosen) for option in prior}
+        total = 1.0
+    return _round_hundredths({option: d / total for option, d in draws.items()})
+
+
+def _round_hundredths(probabilities: dict[str, float]) -> dict[str, float]:
+    """Round to two decimals so that they still sum to 1 (largest remainder)."""
+    scaled = {option: p * 100 for option, p in probabilities.items()}
+    hundredths = {option: math.floor(s) for option, s in scaled.items()}
+    by_remainder = sorted(
+        scaled, key=lambda option: scaled[option] - hundredths[option], reverse=True
+    )
+    for option in by_remainder[: max(0, 100 - sum(hundredths.values()))]:
+        hundredths[option] += 1
+    return {option: h / 100 for option, h in hundredths.items()}
 
 
 def keyword_pattern(stems: Sequence[str]) -> re.Pattern[str]:
@@ -187,7 +145,7 @@ DECEPTION_KEYWORDS = keyword_pattern(
 class FakeProbe(NamedTuple):
     """A probe and how `fake_probe_runner` makes up its values."""
 
-    probe: TokenProbe
+    probe: NumericField
     keywords: re.Pattern[str]
     """Words the probe responds to."""
     strength: float
@@ -199,13 +157,13 @@ class FakeProbe(NamedTuple):
 FAKE_PROBES = [
     *(
         FakeProbe(
-            TokenProbe(
+            NumericField(
                 name=f"eval_awareness_L{layer}",
                 description=(
                     "Linear probe for evaluation awareness (the model thinks it "
                     f"is being tested) on the residual stream at layer {layer}."
                 ),
-                layer=layer,
+                model_layer=layer,
             ),
             EVAL_AWARENESS_KEYWORDS,
             strength=strength,
@@ -214,10 +172,10 @@ FAKE_PROBES = [
         for layer, strength, noise in [(16, 2.0, 1.3), (24, 4.0, 1.0), (32, 6.0, 0.7)]
     ),
     FakeProbe(
-        TokenProbe(
+        NumericField(
             name="deception_L24",
             description="Linear probe for deception on the residual stream at layer 24.",
-            layer=24,
+            model_layer=24,
         ),
         DECEPTION_KEYWORDS,
         strength=4.0,
@@ -245,7 +203,7 @@ def fake_probe_runner(
     fakes: Sequence[FakeProbe] = FAKE_PROBES,
     encoding_name: str = "o200k_base",
 ) -> ProbeRunner:
-    """Random, plausible-looking probe values, for building viewers and tests.
+    """Random, plausible-looking probe values.
 
     Each value is `BIAS`, plus an AR(1) series with standard deviation
     `noise`, plus a keyword boost: tokens that overlap a keyword get
@@ -253,9 +211,9 @@ def fake_probe_runner(
     token. So values are high on and just after keywords, which shows whether
     the viewer lines values up with the right tokens.
 
-    Deterministic: each part's values for a probe come from a `random.Random`
-    seeded with a SHA-256 digest of `seed`, the sample id, the epoch, the
-    message id, the content index and the probe name.
+    Deterministic: each part's values for a probe come from
+    `seeded_random(seed, sample id, epoch, message id, content index, probe
+    name)`.
 
     Args:
         seed: Extra seed text, e.g. the eval id, so that samples with the
@@ -266,7 +224,7 @@ def fake_probe_runner(
     by_name = {fake.probe.name: fake for fake in fakes}
 
     async def fake_probes(
-        parts: list[TextPart], probes: Sequence[TokenProbe], state: TaskState
+        parts: list[TextPart], probes: Sequence[NumericField], state: TaskState
     ) -> list[PartValues]:
         unknown = [probe.name for probe in probes if probe.name not in by_name]
         if unknown:
@@ -277,18 +235,14 @@ def fake_probe_runner(
             values: dict[str, list[float]] = {}
             for probe in probes:
                 fake = by_name[probe.name]
-                key = json.dumps(
-                    [
-                        seed,
-                        state.sample_id,
-                        state.epoch,
-                        part.message_id,
-                        part.content_index,
-                        probe.name,
-                    ]
+                rng = seeded_random(
+                    seed,
+                    state.sample_id,
+                    state.epoch,
+                    part.message_id,
+                    part.content_index,
+                    probe.name,
                 )
-                digest = hashlib.sha256(key.encode()).digest()
-                rng = random.Random(int.from_bytes(digest[:8], "big"))
                 noise = ar1(rng, len(offsets), fake.noise)
                 boost = keyword_boost(part.text, offsets, fake.keywords, fake.strength)
                 values[probe.name] = [
