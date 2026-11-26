@@ -202,9 +202,9 @@ describe("annotated parts", () => {
 
   it("draw tinted spans with black or white text for their background", () => {
     renderAnnotated("kind", {
-      palette: { scheme: colorScheme("high-contrast-saturated"), dark: false },
+      palette: { scheme: colorScheme("high-contrast"), dark: false },
     });
-    // u1's spans are mapping, mapping, task_work: solid red, red, then blue.
+    // u1's spans are mapping, mapping, task_work: orange, orange, then blue.
     expect(spansIn(screen.getByTestId("u1")).map((s) => s.style.color)).toEqual(
       ["rgb(0, 0, 0)", "rgb(0, 0, 0)", "rgb(255, 255, 255)"]
     );

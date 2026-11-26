@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  apcaContrast,
   colorScheme,
   kColorSchemes,
   stepColorScheme,
@@ -59,6 +60,13 @@ describe("textOn", () => {
     expect(textOn("#ffd700", 1, true)).toBe("#000000");
   });
 
+  it("picks white on saturated mid-tones such as pure red", () => {
+    // WCAG 2's ratio would pick black here (5.3:1 against 4:1).
+    expect(textOn("#ff0000", 1, false)).toBe("#ffffff");
+    expect(textOn("#0072b2", 0.9, false)).toBe("#ffffff");
+    expect(textOn("#e69f00", 0.9, false)).toBe("#000000");
+  });
+
   it("accounts for the page behind a faint tint", () => {
     // A faint blue looks pale on white and dark on the dark theme's page.
     expect(textOn("#0000ff", 0.15, false)).toBe("#000000");
@@ -69,5 +77,17 @@ describe("textOn", () => {
 describe("withAlpha", () => {
   it("writes a hex colour as rgba", () => {
     expect(withAlpha("#2a78d6", 0.3)).toBe("rgba(42, 120, 214, 0.3)");
+  });
+});
+
+describe("apcaContrast", () => {
+  it("matches APCA's published values for black and white", () => {
+    // APCA-W3 0.0.98G: black text on white is Lc 106, white on black Lc 108.
+    expect(apcaContrast(0, 1)).toBeCloseTo(106.04, 1);
+    expect(apcaContrast(1, 0)).toBeCloseTo(107.88, 1);
+  });
+
+  it("is zero for text the same as its background", () => {
+    expect(apcaContrast(0.5, 0.5)).toBe(0);
   });
 });

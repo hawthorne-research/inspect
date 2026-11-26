@@ -192,15 +192,19 @@ const kPageLight = "#ffffff";
 const kPageDark = "#212529";
 
 /**
- * Black or white, whichever contrasts more with `color` drawn at `alpha`
- * over the theme's page background (WCAG relative luminance). Spans sit on
- * slightly tinted message panels, so this is a close estimate.
+ * Black or white, whichever has the higher APCA contrast (Lc) with `color`
+ * drawn at `alpha` over the theme's page background. APCA, the contrast
+ * measure in the WCAG 3 draft, follows perception better than WCAG 2's
+ * ratio, which prefers black on saturated mid-tones such as pure red where
+ * white reads better. Spans sit on slightly tinted message panels, so the
+ * background is a close estimate.
  */
 export const textOn = (color: string, alpha: number, dark: boolean): string => {
   const shown = blend(rgb(color), rgb(dark ? kPageDark : kPageLight), alpha);
-  const l = luminance(shown);
-  // Contrast with black is (l + 0.05) / 0.05, with white 1.05 / (l + 0.05).
-  return (l + 0.05) * (l + 0.05) >= 0.05 * 1.05 ? "#000000" : "#ffffff";
+  const background = screenLuminance(shown);
+  return apcaContrast(1, background) > apcaContrast(0, background)
+    ? "#ffffff"
+    : "#000000";
 };
 
 type Rgb = readonly [number, number, number];
@@ -216,10 +220,32 @@ const blend = (top: Rgb, bottom: Rgb, alpha: number): Rgb => [
   top[2] * alpha + bottom[2] * (1 - alpha),
 ];
 
-const luminance = ([r, g, b]: Rgb): number => {
-  const channel = (c: number) => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+/** APCA's screen luminance of an sRGB colour (a plain 2.4 power curve). */
+const screenLuminance = ([r, g, b]: Rgb): number =>
+  0.2126729 * (r / 255) ** 2.4 +
+  0.7151522 * (g / 255) ** 2.4 +
+  0.072175 * (b / 255) ** 2.4;
+
+// APCA-W3 0.0.98G constants.
+const kBlackThreshold = 0.022;
+const kBlackClamp = 1.414;
+const kScale = 1.14;
+const kOffset = 0.027;
+const kLowClip = 0.1;
+
+const softClampBlack = (y: number): number =>
+  y > kBlackThreshold ? y : y + (kBlackThreshold - y) ** kBlackClamp;
+
+/** The magnitude of APCA's lightness contrast Lc (0 to about 108) of text
+ *  of luminance `text` on a background of luminance `background`. */
+export const apcaContrast = (text: number, background: number): number => {
+  const t = softClampBlack(text);
+  const b = softClampBlack(background);
+  if (Math.abs(b - t) < 0.0005) return 0;
+  // Dark text on a light background, and light text on a dark one, follow
+  // different curves.
+  const sapc =
+    b > t ? (b ** 0.56 - t ** 0.57) * kScale : (b ** 0.65 - t ** 0.62) * kScale;
+  const magnitude = Math.abs(sapc);
+  return magnitude < kLowClip ? 0 : (magnitude - kOffset) * 100;
 };
