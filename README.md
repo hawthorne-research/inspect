@@ -19,6 +19,16 @@ In a sample's **Messages** tab:
 - A legend above the messages has a layer picker, a **Color by** picker for the field to colour by, and either the options with their counts (click one to highlight it) or a colour bar. Under it, a strip shows the whole transcript; click a segment to jump to that span.
 - Hovering a span shows every field's value, with a bar for each option's probability or for each numeric value.
 
+A classifier's labels on each paragraph of the reasoning, hovering one paragraph:
+
+![Paragraph labels in the Messages tab, with the hover showing each option's probability](proto/text_annotations/images/paragraph-labels.png)
+
+Probe values on every token of the same transcript, hovering the token "grader":
+
+![Per-token probe values in the Messages tab, with the hover showing each probe's value](proto/text_annotations/images/token-values.png)
+
+Both pictures show a made-up demo transcript with made-up labels and values. You can make the same log yourself (see [Try the demo](#try-the-demo)).
+
 ## Setup
 
 You need [uv](https://docs.astral.sh/uv/) 0.13.4 or later, Node.js 22.13 or later and [pnpm](https://pnpm.io/) 11.
@@ -57,6 +67,17 @@ pnpm dev
 ```
 
 Then open <http://localhost:5173>.
+
+## Try the demo
+
+`make_demo` writes a log with a made-up transcript annotated both ways: a coding agent fixes a function, finds a note saying that only the tests are graded, and considers gaming them. A toy keyword classifier labels each reasoning paragraph, and fake probes give every token a value that rises on words about tests and grading. Inspect's mock model plays the agent, so no API key is needed.
+
+```bash
+uv run python -m proto.text_annotations.make_demo --output demo/text-annotations-demo.eval
+uv run inspect view start --log-dir demo --port 7575
+```
+
+Then run `pnpm dev` as above and open the log at <http://localhost:5173>.
 
 ## Add annotations to a log
 

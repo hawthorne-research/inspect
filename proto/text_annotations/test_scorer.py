@@ -1,11 +1,13 @@
 import math
 import re
 from collections.abc import Sequence
+from pathlib import Path
 
 import anyio
 import pytest
 from pydantic import ValidationError
 
+from inspect_ai.log import read_eval_log
 from inspect_ai.model import (
     ChatMessage,
     ChatMessageAssistant,
@@ -44,6 +46,7 @@ from .fake import (
     keyword_mask,
     random_classifier,
 )
+from .make_demo import make_demo
 from .scorer import AnnotatedSpan, text_annotations
 from .spans import Span, paragraph_spans, token_offsets, token_spans
 
@@ -596,3 +599,26 @@ def test_fake_probe_runner_values_of_a_part_depend_only_on_its_spans() -> None:
     for name, probe_values in values.items():
         by_span = dict(zip(reversed_parts, reordered[name], strict=True))
         assert [by_span[span] for span in spans] == probe_values
+
+
+def test_demo_log_has_both_layers(tmp_path: Path) -> None:
+    output = tmp_path / "demo.eval"
+    make_demo(output)
+    [sample] = read_eval_log(str(output)).samples or []
+    layers = {
+        name: TextAnnotations.model_validate(
+            (score.metadata or {})[TEXT_ANNOTATIONS_KEY]
+        ).layers[0]
+        for name, score in (sample.scores or {}).items()
+    }
+    paragraphs, tokens = layers["paragraph_labels"], layers["probe_values"]
+    assert paragraphs.unit == "paragraph" and paragraphs.span_count() == 9
+    shortcut = [
+        label
+        for part in paragraphs.parts
+        for label in part.values["kind"]
+        if label == "weighing_shortcut"
+    ]
+    assert shortcut == ["weighing_shortcut"]
+    assert tokens.unit == "token" and tokens.span_count() > 0
+    assert tokens.metadata == {"tokenizer": "tiktoken/o200k_base"}
