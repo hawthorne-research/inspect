@@ -189,3 +189,6 @@ node_modules/
 /.claude/*
 !/.claude/skills
 /benchmarks/
+
+# Paragraph-labels prototype: local copies of private eval logs
+proto_data/
