@@ -40,7 +40,7 @@
 
 /* Sticks under the tab bar; bleeds over the chat padding so scrolled
    content can't show around it. */
-.spanLabelsLegend {
+.stickyLegend {
   position: sticky;
   z-index: 1000;
   margin: -0.5rem -0.5rem 0.5rem;

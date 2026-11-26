@@ -24,6 +24,9 @@ import { hasServerToolUse, Message } from "./messages";
 import { ServerToolCall } from "./server-tools/ServerToolCall";
 import { labelledReasoningParts } from "./span-labels/spanLabels";
 import { useSpanLabels } from "./span-labels/SpanLabelsContext";
+import { TokenValuedContent } from "./token-values/TokenValuedContent";
+import { messageTokenParts } from "./token-values/tokenValues";
+import { useTokenValues } from "./token-values/TokenValuesContext";
 import {
   codexToolMarkdown,
   formatSubagentNotifications,
@@ -67,13 +70,19 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
 
   const [mouseOver, setMouseOver] = useState(false);
 
-  // Labelled reasoning is what the reader came to see, so its message
-  // starts expanded rather than clipped.
+  // Labelled reasoning and token values are what the reader came to see,
+  // and the overview strips scroll to them, so their message starts
+  // expanded rather than clipped.
   const spanLabels = useSpanLabels();
   const reasoningSpans = spanLabels
     ? labelledReasoningParts(spanLabels.spansByPart, message)
     : undefined;
-  const collapseContent = reasoningSpans === undefined;
+  const tokenValues = useTokenValues();
+  const tokenParts = tokenValues
+    ? messageTokenParts(tokenValues.values, message)
+    : undefined;
+  const collapseContent =
+    reasoningSpans === undefined && tokenParts === undefined;
 
   const isNonSubagentTool =
     message.role === "tool" &&
@@ -223,11 +232,20 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
                   collapse={collapseContent}
                   lines={25}
                 >
-                  <MessageContent
-                    contents={segment.contents}
-                    references={references}
-                    reasoningSpans={reasoningSpans}
-                  />
+                  {tokenValues && tokenParts ? (
+                    <TokenValuedContent
+                      contents={segment.contents}
+                      parts={tokenParts}
+                      view={tokenValues}
+                      references={references}
+                    />
+                  ) : (
+                    <MessageContent
+                      contents={segment.contents}
+                      references={references}
+                      reasoningSpans={reasoningSpans}
+                    />
+                  )}
                 </ExpandablePanel>
               ) : null}
             </div>
@@ -273,7 +291,15 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
                 : 15
           }
         >
-          {isNonSubagentTool ? (
+          {tokenValues && tokenParts ? (
+            <TokenValuedContent
+              contents={message.content}
+              parts={tokenParts}
+              view={tokenValues}
+              references={references}
+              tool={isNonSubagentTool}
+            />
+          ) : isNonSubagentTool ? (
             toolSearchNamespaces ? (
               <ToolSearchView namespaces={toolSearchNamespaces} />
             ) : toolMarkdown !== undefined ? (

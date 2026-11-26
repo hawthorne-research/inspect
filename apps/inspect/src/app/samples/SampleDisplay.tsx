@@ -19,6 +19,8 @@ import {
   ChatViewRowsVirtualList,
   SpanLabelsContext,
   SpanLabelsLegend,
+  TokenValuesContext,
+  TokenValuesLegend,
   type ChatViewListHandle,
   type MessageRow,
 } from "@tsmono/inspect-components/chat";
@@ -139,6 +141,10 @@ import {
   parseTerminalCasts,
 } from "./terminals/terminalModel";
 import { TerminalsView, type TerminalsResume } from "./terminals/TerminalsView";
+import {
+  noteSpanLabelsHidden,
+  useSampleTokenValues,
+} from "./token-values/useSampleTokenValues";
 import { ChunkedTranscriptPanel } from "./transcript/chunked/ChunkedTranscriptPanel";
 import { useTranscriptFilter } from "./transcript/hooks";
 import { useInspectSearchContext } from "./transcript/search/inspectSearchAdapters";
@@ -309,12 +315,17 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   );
   const exportMessages = useMessagesExport(sampleData);
   const chatListRef = useRef<ChatViewListHandle>(null);
-  const spanLegendRef = useRef<HTMLDivElement>(null);
-  const spanLabels = useSampleSpanLabels(sample, {
+  const legendRef = useRef<HTMLDivElement>(null);
+  const legendTargets = {
     list: chatListRef,
     scroller: scrollRef,
-    legend: spanLegendRef,
-  });
+    legend: legendRef,
+  };
+  const tokenValues = useSampleTokenValues(sample, legendTargets);
+  const allSpanLabels = useSampleSpanLabels(sample, legendTargets);
+  // Prototype limit: one annotation layer at a time, token values first.
+  const spanLabels = tokenValues ? undefined : allSpanLabels;
+  if (tokenValues && allSpanLabels) noteSpanLabelsHidden();
 
   // Focus the panel when it loads
   // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
@@ -1169,50 +1180,61 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                     error={sampleMessages.rows.error}
                   />
                 ) : (
-                  <SpanLabelsContext.Provider value={spanLabels?.view}>
-                    {spanLabels ? (
-                      // In flow above the list, so the chat's landings
-                      // (which compensate for in-flow chrome) still clear it.
-                      // Tucked 1px under the tab bar: at a fractional offset
-                      // the shared edge leaves a seam that content shows
-                      // through.
-                      <div
-                        ref={spanLegendRef}
-                        className={styles.spanLabelsLegend}
-                        style={{ top: stickyOffsetTop - 1 }}
-                      >
-                        <SpanLabelsLegend
-                          view={spanLabels.view}
-                          segments={spanLabels.segments}
-                          onColorByChange={spanLabels.setColorBy}
-                          onToggleHighlight={spanLabels.toggleHighlight}
-                          onClearHighlight={spanLabels.clearHighlight}
-                          onSelectSegment={spanLabels.focusSegment}
-                        />
-                      </div>
-                    ) : null}
-                    <ChatViewRowsVirtualList
-                      ref={chatListRef}
-                      key={chatListId}
-                      id={chatListId}
-                      rows={sampleMessages.rows.data ?? kNoMessageRows}
-                      hasMoreRows={sampleMessages.hasMore}
-                      onLoadMoreRows={sampleMessages.loadMore}
-                      initialMessageId={sampleDetailNavigation.message}
-                      followRequested={sampleDetailNavigation.follow}
-                      display={chatDisplay}
-                      labels={messagesSearchLabels}
-                      linking={chatLinking}
-                      onNativeFindChanged={setNativeFind}
-                      scrollRef={scrollRef}
-                      tools={chatTools}
-                      running={running}
-                      backfilling={backfilling || sampleMessages.rows.loading}
-                      scrollToTopOnFinish={scrollToTopOnFinish}
-                      className={styles.fullWidth}
-                      selection={evidence.listSelection}
-                    />
-                  </SpanLabelsContext.Provider>
+                  <TokenValuesContext.Provider value={tokenValues?.view}>
+                    <SpanLabelsContext.Provider value={spanLabels?.view}>
+                      {tokenValues || spanLabels ? (
+                        // In flow above the list, so the chat's landings
+                        // (which compensate for in-flow chrome) still clear it.
+                        // Tucked 1px under the tab bar: at a fractional offset
+                        // the shared edge leaves a seam that content shows
+                        // through.
+                        <div
+                          ref={legendRef}
+                          className={styles.stickyLegend}
+                          style={{ top: stickyOffsetTop - 1 }}
+                        >
+                          {tokenValues ? (
+                            <TokenValuesLegend
+                              view={tokenValues.view}
+                              bins={tokenValues.bins}
+                              onProbeChange={tokenValues.setProbe}
+                              onSelectBin={tokenValues.focusBin}
+                            />
+                          ) : spanLabels ? (
+                            <SpanLabelsLegend
+                              view={spanLabels.view}
+                              segments={spanLabels.segments}
+                              onColorByChange={spanLabels.setColorBy}
+                              onToggleHighlight={spanLabels.toggleHighlight}
+                              onClearHighlight={spanLabels.clearHighlight}
+                              onSelectSegment={spanLabels.focusSegment}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <ChatViewRowsVirtualList
+                        ref={chatListRef}
+                        key={chatListId}
+                        id={chatListId}
+                        rows={sampleMessages.rows.data ?? kNoMessageRows}
+                        hasMoreRows={sampleMessages.hasMore}
+                        onLoadMoreRows={sampleMessages.loadMore}
+                        initialMessageId={sampleDetailNavigation.message}
+                        followRequested={sampleDetailNavigation.follow}
+                        display={chatDisplay}
+                        labels={messagesSearchLabels}
+                        linking={chatLinking}
+                        onNativeFindChanged={setNativeFind}
+                        scrollRef={scrollRef}
+                        tools={chatTools}
+                        running={running}
+                        backfilling={backfilling || sampleMessages.rows.loading}
+                        scrollToTopOnFinish={scrollToTopOnFinish}
+                        className={styles.fullWidth}
+                        selection={evidence.listSelection}
+                      />
+                    </SpanLabelsContext.Provider>
+                  </TokenValuesContext.Provider>
                 )}
               </RailSidebarHost>
             </TabPanel>

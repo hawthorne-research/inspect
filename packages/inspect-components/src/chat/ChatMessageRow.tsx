@@ -15,6 +15,9 @@ import styles from "./ChatMessageRow.module.css";
 import { MessageLabel } from "./MessageLabel";
 import { hasServerToolUse, ResolvedMessage } from "./messages";
 import { hasVisibleContent } from "./rowsModel";
+import { ToolTokenOutput } from "./token-values/TokenValuedContent";
+import { messageTokenParts } from "./token-values/tokenValues";
+import { useTokenValues } from "./token-values/TokenValuesContext";
 import { ClientToolCall } from "./tools/ClientToolCall";
 import { resolveToolInput, substituteToolCallContent } from "./tools/tool";
 import {
@@ -69,6 +72,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const rowSelection = useSelectableRow(
     resolvedMessage.message.id ?? undefined
   );
+  const tokenValues = useTokenValues();
   const headerLeading = rowSelection ? (
     <RowSelectCheckbox selection={rowSelection} item="message" />
   ) : undefined;
@@ -158,6 +162,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 
       // Resolve the tool output
       const resolvedToolOutput = resolveToolMessage(toolMessage);
+      const toolTokenParts =
+        tokenValues && toolMessage
+          ? messageTokenParts(tokenValues.values, toolMessage)
+          : undefined;
 
       const resolvedToolView = tool_call.view
         ? substituteToolCallContent(tool_call.view, tool_call.arguments)
@@ -185,6 +193,15 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             contentType={contentType}
             output={resolvedToolOutput}
             error={toolMessage?.error ?? undefined}
+            outputOverride={
+              tokenValues && toolMessage && toolTokenParts ? (
+                <ToolTokenOutput
+                  message={toolMessage}
+                  parts={toolTokenParts}
+                  view={tokenValues}
+                />
+              ) : undefined
+            }
             view={resolvedToolView}
             getCustomToolView={getCustomToolView}
             // The head chat message is skipped for tool-only turns, so the

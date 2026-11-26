@@ -100,6 +100,12 @@
   --inspect-span-label-yes: #eb6834;
   --inspect-span-label-none: #a9abaf;
 
+  /* Token values: a diverging pair drawn as backgrounds behind text at up
+     to 80% opacity, clear at zero. Each keeps body text at >= 5:1 contrast
+     at full intensity on the body background. */
+  --inspect-token-value-negative: #257de0;
+  --inspect-token-value-positive: #ec4647;
+
   /* Tool block (header/edge/zones) tokens: neutral by default so the
      design-consistent look holds when Event Colors is off; the readable
      variant points them at the colored tool tokens below. The left edges
@@ -164,6 +170,9 @@
   --inspect-span-label-8: #e66767;
   --inspect-span-label-yes: #d95926;
   --inspect-span-label-none: #67696f;
+
+  --inspect-token-value-negative: #1b64be;
+  --inspect-token-value-positive: #c0392b;
 
   --inspect-readable-user-bg: #262421;
   --inspect-readable-user-border: #8e8881;

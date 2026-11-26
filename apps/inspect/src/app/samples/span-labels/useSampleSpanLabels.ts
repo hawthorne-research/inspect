@@ -87,7 +87,7 @@ export function useSampleSpanLabels(
       scroller,
       chrome: legend,
       messageId: segment.span.message_id,
-      spanKey: segment.key,
+      selector: `[data-span-key="${CSS.escape(segment.key)}"]`,
       onLanded: () => {
         const nonce = Date.now();
         setFlash({ key: segment.key, nonce });

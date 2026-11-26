@@ -1,0 +1,76 @@
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.35rem 0.6rem 0.45rem;
+  border: 1px solid var(--bs-light-border-subtle);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--bs-light-bg-subtle);
+  font-size: var(--inspect-font-size-small);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  line-height: 1.2;
+}
+
+.source {
+  color: var(--bs-secondary-color);
+  font-family: var(--bs-font-monospace);
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.probe {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.select {
+  max-width: 18rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--inspect-input-border);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--inspect-input-background);
+  color: var(--inspect-input-foreground);
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.colorBar {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 9rem;
+  cursor: help;
+}
+
+/* The token scale itself: each end at full intensity, clear at zero. */
+.gradient {
+  height: 8px;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 2px;
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--inspect-token-value-negative) 80%, transparent),
+    transparent 50%,
+    color-mix(in srgb, var(--inspect-token-value-positive) 80%, transparent)
+  );
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  color: var(--bs-secondary-color);
+  font-size: var(--inspect-font-size-smallest);
+  font-variant-numeric: tabular-nums;
+}
+
+.noScale {
+  color: var(--bs-secondary-color);
+  font-size: var(--inspect-font-size-smaller);
+}

@@ -40,6 +40,9 @@ export interface ClientToolCallProps {
   afterOutput?: ReactNode;
   /** Rendered in place of the output, for a call that never ran. */
   outputReplacement?: ReactNode;
+  /** Rendered in place of the output and any error. Custom tool views,
+   *  which draw the output themselves, are skipped. */
+  outputOverride?: ReactNode;
   /** Optional leading element rendered before the tool icon in the header
    *  (e.g. a selection checkbox while evidence selection mode is on). */
   headerLeading?: ReactNode;
@@ -68,6 +71,7 @@ export const ClientToolCall: FC<ClientToolCallProps> = ({
   afterInput,
   afterOutput,
   outputReplacement,
+  outputOverride,
   headerLeading,
 }) => {
   const customContent = useCustomContent();
@@ -86,9 +90,10 @@ export const ClientToolCall: FC<ClientToolCallProps> = ({
     selfAnnotation,
     inputScreenshot,
   };
-  const customView = customContent
-    ? (getCustomToolView?.(viewProps) ?? getDefaultCustomToolView(viewProps))
-    : undefined;
+  const customView =
+    customContent && outputOverride === undefined
+      ? (getCustomToolView?.(viewProps) ?? getDefaultCustomToolView(viewProps))
+      : undefined;
   if (customView) {
     return (
       <div className={clsx(styles.custom, className)}>
@@ -143,7 +148,9 @@ export const ClientToolCall: FC<ClientToolCallProps> = ({
         </ToolBlockInput>
       ) : null}
       {afterInput}
-      {outputReplacement ? (
+      {outputOverride !== undefined ? (
+        outputOverride
+      ) : outputReplacement ? (
         outputReplacement
       ) : showError ? (
         <ToolBlockOutput>

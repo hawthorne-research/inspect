@@ -1,68 +1,68 @@
 import type { ChatViewListHandle } from "@tsmono/inspect-components/chat";
 
-// Space between the sticky chrome and the paragraph it lands under.
+// Space between the sticky chrome and the element it lands under.
 const kLandingGap = 12;
-// About a second of frames: long enough for the rows above the paragraph to
+// About a second of frames: long enough for the rows above the target to
 // measure, short enough not to fight a user who starts scrolling.
 const kMaxSettleFrames = 60;
 
 interface ScrollToSpanOptions {
   list: ChatViewListHandle;
   scroller: HTMLElement;
-  /** Bottom edge of this element is where the paragraph should land. */
+  /** Bottom edge of this element is where the target should land. */
   chrome: HTMLElement;
   messageId: string;
-  /** The paragraph's `data-span-key`. */
-  spanKey: string;
-  onLanded: () => void;
+  /** Selects the element to land, within the message's row. */
+  selector: string;
+  onLanded: (target: Element) => void;
 }
 
 /**
- * Scrolls the messages list to a labelled paragraph, including one whose
- * message is virtualized off-screen: the list first lands the message's
- * row, then the paragraph is nudged until it sits just below the sticky
- * chrome and stays put (rows above it re-measure as they render). False
- * when no loaded row holds the message.
+ * Scrolls the messages list to an element of a message (a labelled
+ * paragraph, a token), including one whose message is virtualized
+ * off-screen: the list first lands the message's row, then the element is
+ * nudged until it sits just below the sticky chrome and stays put (rows
+ * above it re-measure as they render). False when no loaded row holds the
+ * message.
  */
 export const scrollToSpan = ({
   list,
   scroller,
   chrome,
   messageId,
-  spanKey,
+  selector,
   onLanded,
 }: ScrollToSpanOptions): boolean =>
   list.scrollToMessage(messageId, () => {
-    settleParagraph(scroller, chrome, spanKey, onLanded);
+    settleTarget(scroller, chrome, selector, onLanded);
   });
 
-const settleParagraph = (
+const settleTarget = (
   scroller: HTMLElement,
   chrome: HTMLElement,
-  spanKey: string,
-  onLanded: () => void
+  selector: string,
+  onLanded: (target: Element) => void
 ): void => {
-  const selector = `[data-span-key="${CSS.escape(spanKey)}"]`;
   let frames = 0;
   let stable = 0;
   const step = () => {
-    const paragraph = scroller.querySelector(selector);
-    if (paragraph) {
+    const element = scroller.querySelector(selector);
+    if (element) {
       const target = chrome.getBoundingClientRect().bottom + kLandingGap;
-      const delta = paragraph.getBoundingClientRect().top - target;
+      const delta = element.getBoundingClientRect().top - target;
       const before = scroller.scrollTop;
       if (Math.abs(delta) > 1) scroller.scrollTop = before + delta;
-      // Not moving counts as settled, including a paragraph near the end
+      // Not moving counts as settled, including a target near the end
       // that the scroller can't bring any higher.
       stable = Math.abs(scroller.scrollTop - before) > 0.5 ? 0 : stable + 1;
     }
     frames += 1;
-    if (paragraph && stable >= 3) {
-      onLanded();
+    if (element && stable >= 3) {
+      onLanded(element);
     } else if (frames < kMaxSettleFrames) {
       requestAnimationFrame(step);
-    } else if (paragraph) {
-      onLanded();
+    } else if (element) {
+      onLanded(element);
     }
   };
   requestAnimationFrame(step);

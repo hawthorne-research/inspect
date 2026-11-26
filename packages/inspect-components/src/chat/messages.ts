@@ -88,6 +88,9 @@ export class MessageFold {
   }
 }
 
+/** Id of the synthetic message that `mergedSystemMessage` builds. */
+export const kMergedSystemMessageId = "sys-message-6815A84B062A";
+
 /**
  * Collapse system messages into the single synthetic system message the
  * chat renders as its first row (content concatenated in conversation
@@ -106,7 +109,7 @@ export const mergedSystemMessage = (
     return undefined;
   }
   return {
-    id: "sys-message-6815A84B062A",
+    id: kMergedSystemMessageId,
     role: "system",
     content: systemContent,
     source: "input",
