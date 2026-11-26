@@ -5,8 +5,9 @@ which labels every reasoning paragraph with `random_classifier`. The logs in
 `BINARY_LOGS` get one binary question; the rest get the reference project's
 questions for their task. The logs in `TOKEN_LOGS` are also scored with
 `token_values`, which gives each of `FAKE_PROBES` a value on every token with
-`fake_probe_runner`. The copies are written to the output directory under the
-same file names, keeping the existing scores.
+`fake_probe_runner`. Both scorers are `text_annotations`, named for the score.
+The copies are written to the output directory under the same file names,
+keeping the existing scores.
 
 The source logs are only read, and their SHA-256 hashes are compared before
 and after. Every written log is read back and checked. The summary compares
@@ -26,13 +27,16 @@ import math
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import NamedTuple
+
+from pydantic import JsonValue
 
 from inspect_ai import score
 from inspect_ai.log import EvalLog, EvalSample, read_eval_log, write_eval_log
 from inspect_ai.model import ChatMessage
-from inspect_ai.scorer import Score, Scorer
+from inspect_ai.scorer import Score, Scorer, scorer
 
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
@@ -42,16 +46,25 @@ from .annotations import (
     layer_texts,
     text_parts,
 )
+from .annotators import classifier_annotator, probe_annotator
 from .fake import FAKE_PROBES, fake_probe_runner, keyword_mask, random_classifier
-from .paragraphs import PARAGRAPH_BREAK, message_paragraphs
-from .scorers import PARAGRAPH_LAYER, TOKEN_LAYER, paragraph_labels, token_values
-from .tokens import check_covers
+from .scorer import ANNOTATION_METRICS, text_annotations
+from .spans import PARAGRAPH_BREAK, Span, check_covers, paragraph_spans, token_spans
 
 PARAGRAPH_SCORE = "paragraph_labels"
 """Name of the paragraph labels score (the name of the `paragraph_labels` scorer)."""
 
 TOKEN_SCORE = "token_values"
 """Name of the token values score (the name of the `token_values` scorer)."""
+
+PARAGRAPH_LAYER = "paragraph labels"
+"""Name of the paragraph labels layer."""
+
+TOKEN_LAYER = "probes"
+"""Name of the token values layer."""
+
+PARAGRAPH_DESCRIPTION = "A classifier's answers to questions about each paragraph."
+TOKEN_DESCRIPTION = "Values of probes on each token."
 
 CLASSIFIER = "random"
 """Source recorded for the paragraph labels."""
@@ -60,9 +73,10 @@ PROBE_RUNNER = "fake probes"
 """Source recorded for the token values."""
 
 ENCODING = "o200k_base"
-"""tiktoken encoding the fake probes tokenise with."""
+"""tiktoken encoding the token values are on."""
 
-TOKENIZER = f"tiktoken/{ENCODING}"
+TOKEN_METADATA: dict[str, JsonValue] = {"tokenizer": f"tiktoken/{ENCODING}"}
+"""Metadata of the token values layer."""
 
 PROBES = [fake.probe for fake in FAKE_PROBES]
 FAKES = {fake.probe.name: fake for fake in FAKE_PROBES}
@@ -192,6 +206,44 @@ def log_questions(file: str, task: str) -> list[CategoricalField]:
     return task_questions(task)
 
 
+@scorer(metrics=ANNOTATION_METRICS)
+def paragraph_labels(questions: list[CategoricalField], seed: str) -> Scorer:
+    """Fake answers to questions about every reasoning paragraph.
+
+    Args:
+        questions: Questions to answer about every paragraph.
+        seed: Seed text for `random_classifier`, e.g. the log's eval id.
+    """
+    return text_annotations(
+        PARAGRAPH_LAYER,
+        questions,
+        classifier_annotator(paragraph_spans, random_classifier(seed)),
+        source=CLASSIFIER,
+        unit="paragraph",
+        description=PARAGRAPH_DESCRIPTION,
+    )
+
+
+@scorer(metrics=ANNOTATION_METRICS)
+def token_values(seed: str) -> Scorer:
+    """Fake values of `FAKE_PROBES` on every token of every message.
+
+    Args:
+        seed: Seed text for `fake_probe_runner`, e.g. the log's eval id.
+    """
+    return text_annotations(
+        TOKEN_LAYER,
+        PROBES,
+        probe_annotator(
+            partial(token_spans, encoding=ENCODING), fake_probe_runner(seed)
+        ),
+        source=PROBE_RUNNER,
+        unit="token",
+        description=TOKEN_DESCRIPTION,
+        metadata=TOKEN_METADATA,
+    )
+
+
 def log_scorers(file: str, task: str, seed: str) -> list[Scorer]:
     """The scorers a log is scored with, given its file name and task.
 
@@ -200,12 +252,9 @@ def log_scorers(file: str, task: str, seed: str) -> list[Scorer]:
         task: Task of the log.
         seed: Seed text for the fakes, e.g. the log's eval id.
     """
-    scorers = [
-        paragraph_labels(log_questions(file, task), random_classifier(seed), CLASSIFIER)
-    ]
+    scorers = [paragraph_labels(log_questions(file, task), seed)]
     if file in TOKEN_LOGS:
-        runner = fake_probe_runner(seed, encoding_name=ENCODING)
-        scorers.append(token_values(PROBES, runner, PROBE_RUNNER, TOKENIZER))
+        scorers.append(token_values(seed))
     return scorers
 
 
@@ -349,24 +398,27 @@ def check_paragraph_layer(
             part of the sample in transcript order, or the spans aren't the
             paragraphs of the sample's reasoning.
     """
-    if (layer.name, layer.unit, layer.source, layer.tokenizer) != (
+    if (
+        layer.name,
+        layer.unit,
+        layer.source,
+        layer.metadata,
+        layer.description,
+    ) != (
         PARAGRAPH_LAYER,
         "paragraph",
         CLASSIFIER,
-        None,
+        {},
+        PARAGRAPH_DESCRIPTION,
     ) or layer.fields != questions:
         raise ValueError(f"Paragraph layer of {where} isn't the expected one")
     texts = layer_texts(layer, sample.messages)
     spans = [
-        (part.message_id, part.content_index, start, end)
+        Span(part.message_id, part.content_index, start, end)
         for part in layer.parts
         for start, end in part.ranges()
     ]
-    expected = [
-        (p.message_id, p.content_index, p.start, p.end)
-        for p in message_paragraphs(sample.messages)
-    ]
-    if spans != expected:
+    if spans != paragraph_spans(sample.messages):
         raise ValueError(f"Spans of {where} aren't the paragraphs of its reasoning")
     return [
         text[start:end]
@@ -385,11 +437,18 @@ def check_token_layer(
             sample's text parts in order, or a part's tokens don't cover its
             text exactly.
     """
-    if (layer.name, layer.unit, layer.source, layer.tokenizer) != (
+    if (
+        layer.name,
+        layer.unit,
+        layer.source,
+        layer.metadata,
+        layer.description,
+    ) != (
         TOKEN_LAYER,
         "token",
         PROBE_RUNNER,
-        TOKENIZER,
+        TOKEN_METADATA,
+        TOKEN_DESCRIPTION,
     ) or layer.fields != PROBES:
         raise ValueError(f"Token layer of {where} isn't the expected one")
     texts = layer_texts(layer, sample.messages)

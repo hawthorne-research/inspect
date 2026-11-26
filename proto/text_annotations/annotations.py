@@ -2,9 +2,10 @@
 
 Annotations are stored in a score's metadata under `text_annotations`, as
 `TextAnnotations(...).model_dump()`. They hold one or more layers. A layer
-gives the value of one or more fields on each span of some unit of text (a
-paragraph, a token): categorical fields such as a classifier's answer to a
-question, and numeric fields such as a probe's value.
+gives the value of one or more fields on each of its spans, which can be any
+non-overlapping ranges of the text. A field is categorical (one of a list of
+options, e.g. a classifier's answer to a question, optionally with the
+probability of each option) or numeric (e.g. a probe's value).
 
 A layer's spans are grouped into parts, one per text part of a message:
 `message_id` and `content_index` find the text, and `starts` and `ends` are
@@ -18,7 +19,7 @@ import math
 from collections.abc import Sequence
 from typing import Annotated, Literal, NamedTuple
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from inspect_ai.model import ChatMessage, ContentReasoning, ContentText
 
@@ -183,19 +184,19 @@ class AnnotatedPart(_FormatModel):
 
 
 class AnnotationLayer(_FormatModel):
-    """Values of some fields on every span of one unit of text, e.g. paragraphs."""
+    """Values of some fields on every span of a layer."""
 
     name: str = Field(min_length=1)
     """Name of the layer, unique within its score, e.g. "paragraph labels"."""
 
     unit: str = Field(min_length=1)
-    """What one span is, e.g. "paragraph" or "token"."""
+    """What one span is, for display, e.g. "paragraph" or "token"."""
 
     source: str
     """What produced the values, e.g. a classifier's or probe runner's name."""
 
-    tokenizer: str | None = None
-    """Tokenizer that split the text into tokens, e.g. "tiktoken/o200k_base"."""
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    """How the layer was made, e.g. `{"tokenizer": "tiktoken/o200k_base"}`."""
 
     description: str | None = None
     """What the layer holds."""

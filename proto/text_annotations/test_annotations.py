@@ -26,13 +26,17 @@ from .annotations import (
     layer_texts,
     text_parts,
 )
-from .paragraphs import (
+from .spans import (
     PARAGRAPH_BREAK,
+    Span,
     check_content_types,
-    message_paragraphs,
+    check_covers,
     paragraph_ranges,
+    paragraph_spans,
+    span_texts,
+    token_offsets,
+    token_spans,
 )
-from .tokens import check_covers, token_offsets
 
 KIND = CategoricalField(name="kind", options=["work", "grader", "filler"])
 SUSPECTS = CategoricalField(
@@ -40,6 +44,10 @@ SUSPECTS = CategoricalField(
 )
 PROBE = NumericField(name="probe", description="A probe.", model_layer=3)
 FIELDS: list[CategoricalField | NumericField] = [KIND, SUSPECTS, PROBE]
+METADATA = {
+    "tokenizer": "tiktoken/o200k_base",
+    "settings": {"layers": [16, 24], "normalised": True, "scale": 0.5, "note": None},
+}
 
 
 def make_part(**changes: Any) -> dict[str, Any]:
@@ -78,7 +86,7 @@ def make_layer(
         "name": "labels",
         "unit": "paragraph",
         "source": "random",
-        "tokenizer": None,
+        "metadata": {},
         "description": None,
         "fields": [field.model_dump() for field in fields],
         "parts": list(parts),
@@ -98,7 +106,7 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
             name="probes",
             unit="token",
             source="fake probes",
-            tokenizer="tiktoken/o200k_base",
+            metadata=METADATA,
             fields=[PROBE],
         ),
     )
@@ -109,11 +117,12 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
         "name",
         "unit",
         "source",
-        "tokenizer",
+        "metadata",
         "description",
         "fields",
         "parts",
     ]
+    assert dumped["layers"][1]["metadata"] == METADATA
     assert dumped["layers"][0]["fields"] == [
         {
             "name": "kind",
@@ -158,6 +167,12 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
     ]
     assert annotations.layers[0].span_count() == 6
     assert annotations.layers[0].parts[0].ranges() == [(0, 3), (3, 6), (7, 9)]
+
+
+def test_layer_metadata_defaults_to_empty() -> None:
+    layer = make_layer()
+    del layer["metadata"]
+    assert AnnotationLayer.model_validate(layer).metadata == {}
 
 
 def test_probabilities_are_optional_for_each_field() -> None:
@@ -311,6 +326,12 @@ def test_probabilities_are_optional_for_each_field() -> None:
         (make_annotations(make_layer(name="")), "at least 1 character"),
         (make_annotations(version=1), "Input should be 0"),
         (make_annotations(make_layer(source=None)), "valid string"),
+        (make_annotations(make_layer(metadata=None)), "valid dictionary"),
+        (make_annotations(make_layer(metadata={"x": {1, 2}})), "metadata.x"),
+        (
+            make_annotations(make_layer(tokenizer="tiktoken/o200k_base")),
+            "Extra inputs are not permitted",
+        ),
         (
             make_annotations(make_layer(make_part(probabilites={}))),
             "Extra inputs are not permitted",
@@ -437,7 +458,7 @@ def test_paragraphs_match_reference_split(text: str) -> None:
     assert [text[start:end] for start, end in ranges] == reference_split(text)
 
 
-def test_message_paragraphs_reads_assistant_parts() -> None:
+def test_paragraph_spans_reads_assistant_parts() -> None:
     assistant = ChatMessageAssistant(
         id="m1",
         content=[
@@ -451,15 +472,15 @@ def test_message_paragraphs_reads_assistant_parts() -> None:
         assistant,
         ChatMessageAssistant(id="m2", content="Plain.\n\nString."),
     ]
-    assert [
-        (p.content_index, p.start, p.end, p.text) for p in message_paragraphs(messages)
-    ] == [
-        (0, 0, 5, "Plan."),
-        (0, 7, 11, "Act."),
-    ]
-    both = message_paragraphs(messages, ("reasoning", "text"))
+    spans = paragraph_spans(messages)
+    assert spans == [Span("m1", 0, 0, 5), Span("m1", 0, 7, 11)]
+    assert span_texts(spans, messages) == ["Plan.", "Act."]
+    both = paragraph_spans(messages, ("reasoning", "text"))
     # the user's message isn't split, and string content is text
-    assert [(p.message_id, p.content_index, p.text) for p in both][2:] == [
+    assert [
+        (span.message_id, span.content_index, text)
+        for span, text in zip(both, span_texts(both, messages), strict=True)
+    ][2:] == [
         ("m1", 2, "Answer."),
         ("m1", 2, "Done."),
         ("m2", None, "Plain."),
@@ -467,7 +488,7 @@ def test_message_paragraphs_reads_assistant_parts() -> None:
     ]
     assistant.id = None
     with pytest.raises(ValueError, match="no id"):
-        message_paragraphs(messages)
+        paragraph_spans(messages)
     with pytest.raises(ValueError, match="Unknown content types: \\['image'\\]"):
         check_content_types(["reasoning", "image"])
 
@@ -504,3 +525,33 @@ def test_check_covers_rejects_gaps_and_empty_tokens() -> None:
         check_covers("abcd", [TextRange(0, 0), TextRange(0, 4)])
     with pytest.raises(ValueError, match="not at the end"):
         check_covers("abcd", [TextRange(0, 3)])
+
+
+def test_token_spans_cover_every_text_part_in_order() -> None:
+    messages = transcript()
+    spans = token_spans(messages)
+    parts = text_parts(messages)
+    keys = [(part.message_id, part.content_index) for part in parts]
+    assert list(dict.fromkeys((s.message_id, s.content_index) for s in spans)) == keys
+    for key, part in zip(keys, parts, strict=True):
+        ranges = [
+            (s.start, s.end) for s in spans if (s.message_id, s.content_index) == key
+        ]
+        assert ranges == token_offsets(part.text)
+    assert "".join(span_texts(spans, messages)) == "".join(p.text for p in parts)
+
+
+def test_span_texts_rejects_spans_outside_text_parts() -> None:
+    messages = transcript()
+    assert span_texts([Span("a1", 0, 16, 17), Span("t1", None, 0, 4)], messages) == [
+        "🎉",
+        "memo",
+    ]
+    with pytest.raises(ValueError, match="part 1 of message a1 isn't a text part"):
+        span_texts([Span("a1", 1, 0, 1)], messages)
+    with pytest.raises(ValueError, match="empty or outside its text of length 9"):
+        span_texts([Span("t1", None, 5, 10)], messages)
+    with pytest.raises(
+        ValueError, match="\\[3, 3\\) of the string content of message t1"
+    ):
+        span_texts([Span("t1", None, 3, 3)], messages)

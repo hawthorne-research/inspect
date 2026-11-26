@@ -1,4 +1,8 @@
-"""A fake classifier and a fake probe runner, for building viewers and tests."""
+"""A fake classifier and a fake probe runner, for building viewers and tests.
+
+Both work on spans of any size, through `classifier_annotator` and
+`probe_annotator`.
+"""
 
 import hashlib
 import json
@@ -11,9 +15,15 @@ from typing import NamedTuple
 
 from inspect_ai.solver import TaskState
 
-from .annotations import CategoricalField, NumericField, TextPart, TextRange
-from .scorers import PartValues, ProbeRunner, SpanClassifier, SpanProbabilities
-from .tokens import token_offsets
+from .annotations import (
+    CategoricalField,
+    NumericField,
+    TextRange,
+    describe_part,
+    text_parts,
+)
+from .annotators import Classifier, ProbeRunner, SpanProbabilities
+from .spans import Span
 
 
 def seeded_random(*key: object) -> random.Random:
@@ -24,7 +34,7 @@ def seeded_random(*key: object) -> random.Random:
 
 def random_classifier(
     seed: str = "", concentration: float = 0.5, yes_rate: float = 0.1
-) -> SpanClassifier:
+) -> Classifier:
     """Random, plausible-looking probabilities.
 
     Deterministic: each span's draws come from `seeded_random(seed, sample
@@ -149,7 +159,7 @@ class FakeProbe(NamedTuple):
     keywords: re.Pattern[str]
     """Words the probe responds to."""
     strength: float
-    """Value added on tokens that overlap a keyword."""
+    """Value added on spans that overlap a keyword."""
     noise: float
     """Standard deviation of the AR(1) baseline."""
 
@@ -186,70 +196,75 @@ FAKE_PROBES = [
 weaker and noisier at earlier layers, and a deception probe."""
 
 AR_COEFFICIENT = 0.9
-"""Coefficient of the AR(1) baseline: how much of a token's noise carries over."""
+"""Coefficient of the AR(1) baseline: how much of a span's noise carries over."""
 
 BIAS = -0.5
-"""Added to every fake value, so that most tokens are negative."""
+"""Added to every fake value, so that most values are negative."""
 
 DECAY = 0.6
-"""Factor the keyword boost falls by with each token after a keyword."""
+"""Factor the keyword boost falls by with each span after a keyword."""
 
-DECAY_TOKENS = 5
-"""Tokens after a keyword that still get a boost."""
+DECAY_SPANS = 5
+"""Spans after a keyword that still get a boost."""
 
 
 def fake_probe_runner(
-    seed: str = "",
-    fakes: Sequence[FakeProbe] = FAKE_PROBES,
-    encoding_name: str = "o200k_base",
+    seed: str = "", fakes: Sequence[FakeProbe] = FAKE_PROBES
 ) -> ProbeRunner:
     """Random, plausible-looking probe values.
 
     Each value is `BIAS`, plus an AR(1) series with standard deviation
-    `noise`, plus a keyword boost: tokens that overlap a keyword get
-    `strength`, and the next `DECAY_TOKENS` tokens get it times `DECAY` per
-    token. So values are high on and just after keywords, which shows whether
-    the viewer lines values up with the right tokens.
+    `noise`, plus a keyword boost: spans that overlap a keyword get
+    `strength`, and the next `DECAY_SPANS` spans get it times `DECAY` per
+    span. So on tokens, values are high on and just after keywords, which
+    shows whether the viewer lines values up with the right tokens.
 
-    Deterministic: each part's values for a probe come from
-    `seeded_random(seed, sample id, epoch, message id, content index, probe
-    name)`.
+    Deterministic: the values of a probe on the spans of one message part
+    come from `seeded_random(seed, sample id, epoch, message id, content
+    index, probe name)`. The series runs over a part's spans in the order
+    given, which should be ascending.
 
     Args:
         seed: Extra seed text, e.g. the eval id, so that samples with the
             same id in different logs get different values.
         fakes: Probes the runner can run, and how to make up their values.
-        encoding_name: tiktoken encoding to tokenise with.
     """
     by_name = {fake.probe.name: fake for fake in fakes}
 
     async def fake_probes(
-        parts: list[TextPart], probes: Sequence[NumericField], state: TaskState
-    ) -> list[PartValues]:
+        spans: list[Span], probes: Sequence[NumericField], state: TaskState
+    ) -> dict[str, list[float]]:
         unknown = [probe.name for probe in probes if probe.name not in by_name]
         if unknown:
             raise ValueError(f"No fake values for probes {unknown}")
-        results: list[PartValues] = []
-        for part in parts:
-            offsets = token_offsets(part.text, encoding_name)
-            values: dict[str, list[float]] = {}
+        texts = {
+            (p.message_id, p.content_index): p.text for p in text_parts(state.messages)
+        }
+        by_part: dict[tuple[str, int | None], list[int]] = {}
+        for index, span in enumerate(spans):
+            by_part.setdefault((span.message_id, span.content_index), []).append(index)
+        values = {probe.name: [0.0] * len(spans) for probe in probes}
+        for (message_id, content_index), indices in by_part.items():
+            text = texts.get((message_id, content_index))
+            if text is None:
+                where = describe_part(message_id, content_index)
+                raise ValueError(f"The {where} isn't a text part of the messages")
+            offsets = [TextRange(spans[i].start, spans[i].end) for i in indices]
             for probe in probes:
                 fake = by_name[probe.name]
                 rng = seeded_random(
                     seed,
                     state.sample_id,
                     state.epoch,
-                    part.message_id,
-                    part.content_index,
+                    message_id,
+                    content_index,
                     probe.name,
                 )
                 noise = ar1(rng, len(offsets), fake.noise)
-                boost = keyword_boost(part.text, offsets, fake.keywords, fake.strength)
-                values[probe.name] = [
-                    BIAS + n + b for n, b in zip(noise, boost, strict=True)
-                ]
-            results.append(PartValues(offsets, values))
-        return results
+                boost = keyword_boost(text, offsets, fake.keywords, fake.strength)
+                for index, n, b in zip(indices, noise, boost, strict=True):
+                    values[probe.name][index] = BIAS + n + b
+        return values
 
     return fake_probes
 
@@ -272,11 +287,11 @@ def ar1(rng: random.Random, count: int, std: float) -> list[float]:
 def keyword_mask(
     text: str, offsets: Sequence[TextRange], keywords: re.Pattern[str]
 ) -> list[bool]:
-    """Whether each token overlaps a match of `keywords` in `text`.
+    """Whether each span overlaps a match of `keywords` in `text`.
 
     Args:
-        text: Text the tokens come from.
-        offsets: Tokens of the text, ascending and non-overlapping.
+        text: Text the spans come from.
+        offsets: Spans of the text, ascending and non-overlapping.
         keywords: Pattern to match.
     """
     ends = [offset.end for offset in offsets]
@@ -292,15 +307,15 @@ def keyword_mask(
 def keyword_boost(
     text: str, offsets: Sequence[TextRange], keywords: re.Pattern[str], strength: float
 ) -> list[float]:
-    """`strength` on tokens overlapping a keyword, decaying over the tokens after.
+    """`strength` on spans overlapping a keyword, decaying over the spans after.
 
-    The token `k` places after a keyword token gets `strength * DECAY**k`, up
-    to `DECAY_TOKENS` places; where these overlap, a token gets the largest.
+    The span `k` places after a keyword span gets `strength * DECAY**k`, up
+    to `DECAY_SPANS` places; where these overlap, a span gets the largest.
     """
     boost = [0.0] * len(offsets)
     for index, hit in enumerate(keyword_mask(text, offsets, keywords)):
         if not hit:
             continue
-        for after in range(min(DECAY_TOKENS + 1, len(offsets) - index)):
+        for after in range(min(DECAY_SPANS + 1, len(offsets) - index)):
             boost[index + after] = max(boost[index + after], strength * DECAY**after)
     return boost
