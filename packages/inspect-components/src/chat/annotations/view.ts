@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { optionStyle } from "./categorical";
 import type { AnnotationField } from "./format";
 import type { ResolvedLayer, ResolvedPart } from "./layers";
-import { formatValue, valueScale, valueStyle } from "./numeric";
+import { fieldScale, formatValue, valueStyle } from "./numeric";
 
 /** The annotation layer on screen and the field that colours its spans. */
 export interface AnnotationView {
@@ -31,7 +31,7 @@ export const annotationView = (
       layer,
       field,
       highlighted: kNone,
-      scale: valueScale(layer, field),
+      scale: fieldScale(layer, field),
     };
   }
   const highlighted = highlight.filter((o) => field.options.includes(o));
@@ -62,9 +62,11 @@ export interface OptionProbability {
   chosen: boolean;
 }
 
-/** A span's value of one field, as text. */
+/** A span's value of one field. */
 export interface SpanValue {
   text: string;
+  /** The value of a numeric field; undefined for a categorical one. */
+  number: number | undefined;
   /** Each option's probability, most likely first; empty when the layer
    *  has none for the field. */
   probabilities: readonly OptionProbability[];
@@ -80,6 +82,7 @@ export const spanValue = (
     const value = part.values.get(field.name)?.[span];
     return {
       text: value === undefined ? "—" : formatValue(value),
+      number: value,
       probabilities: [],
     };
   }
@@ -87,6 +90,7 @@ export const spanValue = (
   const distribution = part.probabilities.get(field.name)?.[span] ?? [];
   return {
     text: label ?? "—",
+    number: undefined,
     probabilities: distribution
       .map((probability, i) => {
         const option = field.options[i] ?? "";

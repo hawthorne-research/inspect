@@ -19,6 +19,28 @@ const kScaleQuantile = 0.99;
 export const valueScale = (layer: ResolvedLayer, field: NumericField): number =>
   magnitudeScale(layer.parts.map((part) => part.values.get(field.name) ?? []));
 
+const kScales = new WeakMap<ResolvedLayer, Map<string, number>>();
+
+/** `valueScale`, computed once per layer and field: the view and the
+ *  tooltip ask for it on every render and hover, and a large layer has
+ *  tens of thousands of values to sort. */
+export const fieldScale = (
+  layer: ResolvedLayer,
+  field: NumericField
+): number => {
+  let scales = kScales.get(layer);
+  if (!scales) {
+    scales = new Map();
+    kScales.set(layer, scales);
+  }
+  let scale = scales.get(field.name);
+  if (scale === undefined) {
+    scale = valueScale(layer, field);
+    scales.set(field.name, scale);
+  }
+  return scale;
+};
+
 /** The 99th percentile of |value| over every value of `sequences`. */
 export const magnitudeScale = (
   sequences: readonly (readonly number[])[]

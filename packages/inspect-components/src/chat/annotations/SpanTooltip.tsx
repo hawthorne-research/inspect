@@ -1,26 +1,29 @@
 import clsx from "clsx";
-import { FC, useState } from "react";
+import { CSSProperties, FC, useState } from "react";
 
 import { useEventListener } from "@tsmono/react/hooks";
 
 import { hoveredSpan, type HoveredSpan } from "./dom";
-import { fieldLabel } from "./format";
+import { fieldLabel, type AnnotationField } from "./format";
+import type { ResolvedLayer, ResolvedPart } from "./layers";
 import { spanText } from "./layers";
+import { fieldScale, valueIntensity } from "./numeric";
 import styles from "./SpanTooltip.module.css";
 import { Swatch } from "./Swatch";
 import { spanStyle, spanValue, type AnnotationView } from "./view";
 
-const kWidth = 340;
-const kColumnWidth = 220;
+const kColumnWidth = 430;
 const kGap = 6;
-// Longer field lists wrap into more columns rather than a tall tooltip.
-const kRowsPerColumn = 12;
+// More rows than this flow into another column rather than a tall tooltip.
+const kRowsPerColumn = 18;
+const kMaxColumns = 3;
 
 /**
  * The one tooltip for every annotated span in the Messages tab: the span's
- * text and its value of each field of the layer. Listens for hover on the
- * document rather than on each of the sample's spans, and hides on scroll,
- * which would leave it behind.
+ * text, then the span's value of each field of the layer, each with a bar
+ * (an option's probability, or a value against the field's colour scale).
+ * Listens for hover on the document rather than on each of the sample's
+ * spans, and hides on scroll, which would leave it behind.
  */
 export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
   const [hover, setHover] = useState<HoveredSpan | null>(null);
@@ -39,11 +42,12 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
 
   const { part, span, rect } = hover;
   const fields = view.layer.fields;
-  const columns = Math.ceil(fields.length / kRowsPerColumn);
-  const width = Math.min(
-    window.innerWidth - 2 * kGap,
-    Math.max(kWidth, columns * kColumnWidth)
+  const rows = fields.reduce(
+    (sum, field) => sum + 1 + spanValue(field, part, span).probabilities.length,
+    0
   );
+  const columns = Math.min(kMaxColumns, Math.ceil(rows / kRowsPerColumn));
+  const width = Math.min(window.innerWidth - 2 * kGap, columns * kColumnWidth);
   const left = Math.max(
     kGap,
     Math.min(rect.left, window.innerWidth - width - kGap)
@@ -56,56 +60,114 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
       role="tooltip"
       style={{
         left,
-        maxWidth: width,
+        width,
         ...(below
           ? { top: rect.bottom + kGap }
           : { bottom: window.innerHeight - rect.top + kGap }),
       }}
     >
       <div className={styles.text}>{JSON.stringify(spanText(part, span))}</div>
-      <div
-        className={styles.fields}
-        style={{
-          gridTemplateRows: `repeat(${Math.ceil(fields.length / columns)}, auto)`,
-        }}
-      >
-        {fields.map((field) => {
-          const active = field.name === view.field.name;
-          const value = spanValue(field, part, span);
-          return (
-            <div
-              key={field.name}
-              className={clsx(styles.field, active && styles.active)}
-            >
-              <div className={styles.row}>
-                {active ? <Swatch fill={spanStyle(view, part, span)} /> : null}
-                <span className={styles.name}>{fieldLabel(field)}</span>
-                <span className={styles.value}>{value.text}</span>
-              </div>
-              {value.probabilities.length > 0 ? (
-                <div className={styles.probabilities}>
-                  {value.probabilities.map(
-                    ({ option, probability, chosen }) => (
-                      <span
-                        key={option}
-                        className={clsx(chosen && styles.chosen)}
-                      >
-                        {option}{" "}
-                        <span className={styles.percent}>
-                          {formatProbability(probability)}
-                        </span>
-                      </span>
-                    )
-                  )}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
+      <div className={styles.fields} style={{ columnCount: columns }}>
+        {fields.map((field) => (
+          <FieldValue
+            key={field.name}
+            field={field}
+            layer={view.layer}
+            part={part}
+            span={span}
+            swatch={
+              field.name === view.field.name
+                ? spanStyle(view, part, span)
+                : null
+            }
+          />
+        ))}
       </div>
     </div>
   );
 };
+
+/** One field's value on the span: a numeric field is one row with a bar
+ *  from zero; a categorical one is its label, then each option's
+ *  probability when the layer has them. `swatch` marks the field that
+ *  colours the spans (null for the others). */
+const FieldValue: FC<{
+  field: AnnotationField;
+  layer: ResolvedLayer;
+  part: ResolvedPart;
+  span: number;
+  swatch: CSSProperties | undefined | null;
+}> = ({ field, layer, part, span, swatch }) => {
+  const value = spanValue(field, part, span);
+  const active = swatch !== null;
+  const name = (
+    <span
+      className={styles.fieldName}
+      title={field.description ?? fieldLabel(field)}
+    >
+      {active ? <Swatch fill={swatch} /> : null}
+      {fieldLabel(field)}
+    </span>
+  );
+
+  if (field.type === "numeric") {
+    const intensity =
+      value.number === undefined
+        ? 0
+        : valueIntensity(value.number, fieldScale(layer, field));
+    return (
+      <div className={clsx(styles.row, active && styles.active)}>
+        {name}
+        <DivergingBar intensity={intensity} />
+        <span className={styles.number}>{value.text}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={clsx(styles.field, active && styles.active)}>
+      <div className={styles.header}>
+        {name}
+        <span className={styles.label}>{value.text}</span>
+      </div>
+      {value.probabilities.map(({ option, probability, chosen }) => (
+        <div
+          key={option}
+          className={clsx(styles.row, styles.option, chosen && styles.chosen)}
+        >
+          <span className={styles.optionName} title={option}>
+            {option}
+          </span>
+          <span className={styles.bar}>
+            <span
+              className={styles.barFill}
+              style={{ width: `${probability * 100}%` }}
+            />
+          </span>
+          <span className={styles.number}>
+            {formatProbability(probability)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+/** A bar centred on zero, filled towards the value's sign by `intensity`
+ *  (its share of full colour, in [-1, 1]) in the same hue as the text. */
+const DivergingBar: FC<{ intensity: number }> = ({ intensity }) => (
+  <span className={clsx(styles.bar, styles.diverging)}>
+    {intensity !== 0 ? (
+      <span
+        className={clsx(
+          styles.divergingFill,
+          intensity > 0 ? styles.positive : styles.negative
+        )}
+        style={{ width: `${Math.abs(intensity) * 50}%` }}
+      />
+    ) : null}
+  </span>
+);
 
 const formatProbability = (p: number): string =>
   p > 0 && p < 0.01 ? "<1%" : `${Math.round(p * 100)}%`;

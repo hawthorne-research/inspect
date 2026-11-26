@@ -206,8 +206,32 @@ describe("annotated parts", () => {
     expect(within(tooltip).getByText("-2")).toBeTruthy();
     expect(within(tooltip).getByText("kind")).toBeTruthy();
     expect(within(tooltip).getAllByText("task_work")).toHaveLength(2);
-    expect(tooltip.textContent).toContain("task_work 90%");
-    expect(tooltip.textContent).toContain("mapping 10%");
+    const optionRow = (option: string) =>
+      within(tooltip).getByTitle(option).parentElement?.textContent;
+    expect(optionRow("task_work")).toBe("task_work90%");
+    expect(optionRow("mapping")).toBe("mapping10%");
+  });
+
+  it("draw each value in the tooltip as a bar: probabilities, and numbers from zero", () => {
+    renderAnnotated("deception");
+    const [, , there] = spansIn(screen.getByTestId("u1"));
+    if (!there) throw new Error();
+    fireEvent.mouseOver(there);
+    const tooltip = screen.getByRole("tooltip");
+    const fills = (option: string) => {
+      const row = within(tooltip).getByTitle(option).parentElement;
+      return Array.from(
+        row?.querySelectorAll<HTMLElement>('[style*="width"]') ?? []
+      ).map((el) => el.style.width);
+    };
+    expect(fills("task_work")).toEqual(["90%"]);
+    expect(fills("mapping")).toEqual(["10%"]);
+    // -2 against the field's scale fills the left half of the bar.
+    const numeric = within(tooltip)
+      .getByText("-2")
+      .parentElement?.querySelector<HTMLElement>('[style*="width"]');
+    expect(numeric?.style.width).toMatch(/%$/);
+    expect(Number.parseFloat(numeric?.style.width ?? "0")).toBeGreaterThan(0);
   });
 });
 
