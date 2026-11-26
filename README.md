@@ -18,6 +18,7 @@ In a sample's **Messages** tab:
 - Annotated messages show their raw text, with each span tinted by its value. Categorical options each get a colour. Numeric values are blue below zero and red above, stronger further from zero; full colour is set automatically at the 99th percentile of |value| in the sample.
 - A legend above the messages has a layer picker, a **Color by** picker for the field to colour by, and either the options with their counts (click one to highlight it) or a colour bar. Under it, a strip shows the whole transcript; click a segment to jump to that span.
 - Hovering a span shows every field's value, with a bar for each option's probability or for each numeric value.
+- A button in the legend cycles through five colour schemes (shift-click goes back): the default, two colour-blind-safe palettes (Okabe–Ito and Paul Tol's "bright") and two high-contrast schemes with solid colours. Text on a coloured span is black or white, whichever contrasts more with its background.
 
 A classifier's labels on each paragraph of the reasoning, hovering one paragraph:
 
