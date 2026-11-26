@@ -4,25 +4,32 @@ import { FC } from "react";
 import { SegmentedControl } from "@tsmono/react/components";
 
 import styles from "./AnnotationLegend.module.css";
-import { countOptions, optionMark } from "./categorical";
-import type { AnnotationView } from "./context";
-import { fieldLabel, type AnnotationField } from "./format";
+import { countOptions, optionStyle } from "./categorical";
+import {
+  fieldLabel,
+  metadataText,
+  spanCountLabel,
+  type AnnotationField,
+  type CategoricalField,
+} from "./format";
 import type { ResolvedLayer } from "./layers";
 import { formatValue } from "./numeric";
-import { LabelStrip, PeakStrip } from "./OverviewStrip";
-import type { SpanLocation, StripData } from "./strip";
+import { OverviewStrip } from "./OverviewStrip";
+import { SpanTooltip } from "./SpanTooltip";
+import type { SpanLocation, StripSegment } from "./strip";
 import { Swatch } from "./Swatch";
-import { ValueTooltip } from "./ValueTooltip";
+import type { AnnotationView } from "./view";
 
-// A few categorical fields fit a segmented control; more fields, or the
-// long names numeric fields carry with their model layer, go in a select.
+// A few short field names fit a segmented control; more fields, or long
+// names, go in a select.
 const kMaxSegmentedFields = 4;
+const kMaxSegmentedLabel = 20;
 
 interface AnnotationLegendProps {
   view: AnnotationView;
   /** Every layer of the sample, for the layer picker. */
   layers: readonly ResolvedLayer[];
-  strip: StripData;
+  strip: readonly StripSegment[];
   onLayerChange: (id: string) => void;
   onFieldChange: (name: string) => void;
   onToggleHighlight: (option: string) => void;
@@ -32,8 +39,8 @@ interface AnnotationLegendProps {
 
 /**
  * The active layer's summary, layer and field pickers, the field's key
- * (per-option counts that toggle a highlight, or a colour bar) and its
- * overview strip. Also hosts the shared tooltip of shaded spans.
+ * and its overview strip. Also hosts the shared tooltip of annotated
+ * spans.
  */
 export const AnnotationLegend: FC<AnnotationLegendProps> = ({
   view,
@@ -69,67 +76,39 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
           </span>
         )}
         <span className={styles.source}>
-          {[layer.source, layer.tokenizer]
-            .filter((s): s is string => !!s)
-            .join(" · ")}{" "}
-          · {layer.spanCount.toLocaleString()} {layer.unit}s
+          {[
+            layer.source,
+            ...Object.entries(layer.metadata).map(
+              ([key, value]) => `${key}: ${metadataText(value)}`
+            ),
+            spanCountLabel(layer.spanCount, layer.unit),
+          ]
+            .filter((s) => s !== "")
+            .join(" · ")}
         </span>
         <FieldPicker
           fields={layer.fields}
           selected={field}
           onChange={onFieldChange}
         />
-        {field.type === "numeric" ? <ColorBar scale={view.scale} /> : null}
       </div>
       {field.type === "categorical" ? (
-        <div className={styles.options}>
-          {countOptions(layer, field).map(({ option, count }) => {
-            const active = view.highlighted.includes(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                className={clsx(
-                  styles.option,
-                  active && styles.active,
-                  view.highlighted.length > 0 && !active && styles.inactive
-                )}
-                onClick={() => onToggleHighlight(option)}
-              >
-                <Swatch mark={optionMark(field, option)} />
-                {option}
-                <span className={styles.count}>{count}</span>
-              </button>
-            );
-          })}
-          {view.highlighted.length > 0 ? (
-            <button
-              type="button"
-              className={styles.clear}
-              onClick={onClearHighlight}
-            >
-              Show all
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {strip.type === "categorical" && field.type === "categorical" ? (
-        <LabelStrip
-          segments={strip.segments}
+        <OptionKey
+          layer={layer}
           field={field}
           highlighted={view.highlighted}
-          onSelect={onSelectSpan}
+          onToggle={onToggleHighlight}
+          onClear={onClearHighlight}
         />
-      ) : strip.type === "numeric" ? (
-        <PeakStrip
-          bins={strip.bins}
-          scale={view.scale}
-          unit={layer.unit}
-          onSelect={onSelectSpan}
-        />
-      ) : null}
-      {field.type === "numeric" ? <ValueTooltip view={view} /> : null}
+      ) : (
+        <ColorBar scale={view.scale} />
+      )}
+      <OverviewStrip
+        segments={strip}
+        unit={layer.unit}
+        onSelect={onSelectSpan}
+      />
+      <SpanTooltip view={view} />
     </section>
   );
 };
@@ -186,7 +165,7 @@ const FieldPicker: FC<{
   >
     <span className="text-style-secondary">Color by</span>
     {fields.length <= kMaxSegmentedFields &&
-    fields.every((f) => f.type === "categorical") ? (
+    fields.every((f) => fieldLabel(f).length <= kMaxSegmentedLabel) ? (
       <SegmentedControl
         segments={fields.map((f) => ({ id: f.name, label: fieldLabel(f) }))}
         selectedId={selected.name}
@@ -211,6 +190,44 @@ const FieldPicker: FC<{
       </select>
     )}
   </span>
+);
+
+/** Each option's tint and count; clicking options highlights their
+ *  spans. */
+const OptionKey: FC<{
+  layer: ResolvedLayer;
+  field: CategoricalField;
+  highlighted: readonly string[];
+  onToggle: (option: string) => void;
+  onClear: () => void;
+}> = ({ layer, field, highlighted, onToggle, onClear }) => (
+  <div className={styles.options} role="group" aria-label="Options">
+    {countOptions(layer, field).map(({ option, count }) => {
+      const active = highlighted.includes(option);
+      return (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={active}
+          className={clsx(
+            styles.option,
+            active && styles.active,
+            highlighted.length > 0 && !active && styles.inactive
+          )}
+          onClick={() => onToggle(option)}
+        >
+          <Swatch fill={optionStyle(field, option, [])} />
+          {option}
+          <span className={styles.count}>{count.toLocaleString()}</span>
+        </button>
+      );
+    })}
+    {highlighted.length > 0 ? (
+      <button type="button" className={styles.clear} onClick={onClear}>
+        Show all
+      </button>
+    ) : null}
+  </div>
 );
 
 const ColorBar: FC<{ scale: number }> = ({ scale }) =>

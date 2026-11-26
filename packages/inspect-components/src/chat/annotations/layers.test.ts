@@ -21,7 +21,6 @@ import {
   findPart,
   hasAnnotatedPart,
   spanText,
-  textSegments,
   type ResolvedPart,
 } from "./layers";
 import {
@@ -62,7 +61,6 @@ const labelLayer = (overrides: Record<string, unknown> = {}) =>
   rawLayer({
     name: "paragraph labels",
     unit: "paragraph",
-    tokenizer: null,
     fields: [kindField],
     parts: [
       rawPart({
@@ -294,71 +292,5 @@ describe("findPart", () => {
     expect(message.id).toBe(kMergedSystemMessageId);
     expect(findPart(layer, message, 0)?.messageId).toBe("s1");
     expect(hasAnnotatedPart(layer, message)).toBe(true);
-  });
-});
-
-describe("textSegments", () => {
-  const segments = (layer: unknown, messages = kParagraphMessages) => {
-    const [part] = resolvedLayer(layer, messages).parts;
-    if (!part) throw new Error();
-    return textSegments(part).map((s) => [s.text, s.span]);
-  };
-
-  it("splits text into its spans, dropping blank runs between them", () => {
-    expect(segments(labelLayer())).toEqual([
-      ["First I map the maze.", 0],
-      ["Then I solve it.", 1],
-    ]);
-  });
-
-  it("keeps text outside the spans as its own segment", () => {
-    expect(
-      segments(
-        labelLayer({
-          parts: [
-            rawPart({
-              message_id: "p1",
-              content_index: 0,
-              starts: [23],
-              ends: [39],
-              values: { kind: ["mapping"] },
-            }),
-          ],
-        })
-      )
-    ).toEqual([
-      ["First I map the maze.\n\n", undefined],
-      ["Then I solve it.", 0],
-    ]);
-  });
-
-  it("cuts by code point when non-BMP characters precede a span", () => {
-    // Each emoji is one code point but two UTF-16 units, so String.slice
-    // with these offsets would cut two characters short.
-    const messages = [
-      testAssistantMessage({
-        id: "p1",
-        content: [reasoning("🧭🧭 Go north.\n\nThen east.")],
-      }),
-    ];
-    expect(
-      segments(
-        labelLayer({
-          parts: [
-            rawPart({
-              message_id: "p1",
-              content_index: 0,
-              starts: [0, 14],
-              ends: [12, 24],
-              values: { kind: ["mapping", "mapping"] },
-            }),
-          ],
-        }),
-        messages
-      )
-    ).toEqual([
-      ["🧭🧭 Go north.", 0],
-      ["Then east.", 1],
-    ]);
   });
 });

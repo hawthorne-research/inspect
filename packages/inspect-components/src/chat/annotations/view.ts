@@ -1,0 +1,97 @@
+import type { CSSProperties } from "react";
+
+import { optionStyle } from "./categorical";
+import type { AnnotationField } from "./format";
+import type { ResolvedLayer, ResolvedPart } from "./layers";
+import { formatValue, valueScale, valueStyle } from "./numeric";
+
+/** The annotation layer on screen and the field that colours its spans. */
+export interface AnnotationView {
+  layer: ResolvedLayer;
+  field: AnnotationField;
+  /** Options of a categorical `field` kept at full strength; empty keeps
+   *  all. */
+  highlighted: readonly string[];
+  /** The magnitude drawn at full colour for a numeric `field`; 0 for a
+   *  categorical one. */
+  scale: number;
+}
+
+const kNone: readonly string[] = [];
+
+/** The view of `field` of `layer`, keeping the `highlight`ed options the
+ *  field has. */
+export const annotationView = (
+  layer: ResolvedLayer,
+  field: AnnotationField,
+  highlight: readonly string[]
+): AnnotationView => {
+  if (field.type === "numeric") {
+    return {
+      layer,
+      field,
+      highlighted: kNone,
+      scale: valueScale(layer, field),
+    };
+  }
+  const highlighted = highlight.filter((o) => field.options.includes(o));
+  return {
+    layer,
+    field,
+    highlighted: highlighted.length > 0 ? highlighted : kNone,
+    scale: 0,
+  };
+};
+
+/** The background of span `span` of `part` for the view's field. */
+export const spanStyle = (
+  view: AnnotationView,
+  part: ResolvedPart,
+  span: number
+): CSSProperties | undefined => {
+  const { field } = view;
+  return field.type === "categorical"
+    ? optionStyle(field, part.labels.get(field.name)?.[span], view.highlighted)
+    : valueStyle(part.values.get(field.name)?.[span] ?? 0, view.scale);
+};
+
+export interface OptionProbability {
+  option: string;
+  probability: number;
+  /** The option is the span's value. */
+  chosen: boolean;
+}
+
+/** A span's value of one field, as text. */
+export interface SpanValue {
+  text: string;
+  /** Each option's probability, most likely first; empty when the layer
+   *  has none for the field. */
+  probabilities: readonly OptionProbability[];
+}
+
+/** The value of `field` on span `span` of `part`. */
+export const spanValue = (
+  field: AnnotationField,
+  part: ResolvedPart,
+  span: number
+): SpanValue => {
+  if (field.type === "numeric") {
+    const value = part.values.get(field.name)?.[span];
+    return {
+      text: value === undefined ? "—" : formatValue(value),
+      probabilities: [],
+    };
+  }
+  const label = part.labels.get(field.name)?.[span];
+  const distribution = part.probabilities.get(field.name)?.[span] ?? [];
+  return {
+    text: label ?? "—",
+    probabilities: distribution
+      .map((probability, i) => {
+        const option = field.options[i] ?? "";
+        return { option, probability, chosen: option === label };
+      })
+      .sort((a, b) => b.probability - a.probability),
+  };
+};

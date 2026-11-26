@@ -87,8 +87,9 @@
   --inspect-msg-label-border: #e4e4e9;
   --inspect-msg-label-text: #5f5f68;
 
-  /* Text annotations, categorical fields: slots assigned by option index
-     (CVD-checked order), a strong "yes" and a neutral for "no"/unknown. */
+  /* Text annotations, categorical fields: tints behind text, assigned by
+     option index (CVD-checked order); a strong "yes"/"1" (its "no"/"0" is
+     untinted), and a neutral for options past the palette. */
   --inspect-annotation-option-1: #2a78d6;
   --inspect-annotation-option-2: #eb6834;
   --inspect-annotation-option-3: #1baf7a;

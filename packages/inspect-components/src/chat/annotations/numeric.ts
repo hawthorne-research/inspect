@@ -88,54 +88,12 @@ export const formatValue = (value: number): string => {
   return String(Number(value.toPrecision(3)));
 };
 
-/** The overview strip's resolution. */
-export const kMaxBins = 300;
-
-/** One bin of the overview strip. */
-export interface ValueBin {
-  /** How many spans the bin holds. */
-  count: number;
-  /** The bin's value of largest magnitude (the first, on ties). */
-  peak: number;
-  /** Where the peak is: its sequence, and its index there. */
-  sequence: number;
-  span: number;
-}
-
-/**
- * The values of `sequences`, in order, cut into at most `maxBins` bins of
- * equal count (sizes differ by at most one). Each bin reports its value of
- * largest magnitude, so a single spike stays visible however many spans
- * share its bin. Fewer values than bins gives one bin per value.
- */
-export const binValues = (
-  sequences: readonly (readonly number[])[],
-  maxBins: number = kMaxBins
-): ValueBin[] => {
-  const total = sequences.reduce((sum, values) => sum + values.length, 0);
-  const binCount = Math.min(maxBins, total);
-  const bins: ValueBin[] = [];
-  let current: ValueBin | undefined;
-  let seen = 0;
-  let binEnd = Math.floor(total / binCount);
-  for (const [sequence, values] of sequences.entries()) {
-    for (let span = 0; span < values.length; span++) {
-      const value = values[span] ?? 0;
-      if (!current) {
-        current = { count: 0, peak: value, sequence, span };
-      } else if (Math.abs(value) > Math.abs(current.peak)) {
-        current.peak = value;
-        current.sequence = sequence;
-        current.span = span;
-      }
-      current.count += 1;
-      seen += 1;
-      if (seen === binEnd) {
-        bins.push(current);
-        current = undefined;
-        binEnd = Math.floor(((bins.length + 1) * total) / binCount);
-      }
-    }
+/** The index of the value of largest magnitude in `values` (the first, on
+ *  ties); 0 when empty. */
+export const peakIndex = (values: readonly number[]): number => {
+  let peak = 0;
+  for (let i = 1; i < values.length; i++) {
+    if (Math.abs(values[i] ?? 0) > Math.abs(values[peak] ?? 0)) peak = i;
   }
-  return bins;
+  return peak;
 };

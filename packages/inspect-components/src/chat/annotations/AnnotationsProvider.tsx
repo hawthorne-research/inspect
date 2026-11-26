@@ -3,8 +3,9 @@ import { FC, ReactNode } from "react";
 import { MessagePartRendererContext, type MessagePartRenderer } from "..";
 
 import { AnnotatedPart } from "./AnnotatedPart";
-import { AnnotationsContext, type AnnotationView } from "./context";
+import { AnnotationsContext } from "./context";
 import { findPart, hasAnnotatedPart, type ResolvedLayer } from "./layers";
+import type { AnnotationView } from "./view";
 
 /**
  * Draws `view`'s layer on the chat views inside: annotated parts render

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  binValues,
   formatValue,
   magnitudeScale,
+  peakIndex,
   quantile,
   valueIntensity,
   valueStyle,
@@ -72,46 +72,14 @@ describe("value colour", () => {
   });
 });
 
-describe("binValues", () => {
-  it("cuts values into bins of equal count across parts", () => {
-    const sequences = [Array.from({ length: 7 }, () => 0), [0, 0, 0]];
-    const bins = binValues(sequences, 4);
-    expect(bins).toHaveLength(4);
-    const counts = bins.map((b) => b.count);
-    expect(counts.reduce((a, b) => a + b, 0)).toBe(10);
-    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+describe("peakIndex", () => {
+  it("finds the value of largest magnitude, either sign", () => {
+    expect(peakIndex([0.1, -3, 2])).toBe(1);
+    expect(peakIndex([1, 0.5, 4])).toBe(2);
   });
 
-  it("reports each bin's value of largest magnitude and where it is", () => {
-    const bins = binValues(
-      [
-        [0.1, -3, 2],
-        [1, 0.5, 4],
-      ],
-      2
-    );
-    expect(bins.map((b) => [b.peak, b.sequence, b.span])).toEqual([
-      [-3, 0, 1],
-      [4, 1, 2],
-    ]);
-  });
-
-  it("keeps the first of equal peaks", () => {
-    const [bin] = binValues([[2, -2]], 1);
-    expect(bin?.peak).toBe(2);
-  });
-
-  it("gives one bin per value when there are fewer values than bins", () => {
-    const bins = binValues([[1], [2, 3]], 300);
-    expect(bins.map((b) => [b.count, b.peak])).toEqual([
-      [1, 1],
-      [1, 2],
-      [1, 3],
-    ]);
-  });
-
-  it("is empty without values", () => {
-    expect(binValues([[], []])).toEqual([]);
+  it("keeps the first of equal magnitudes", () => {
+    expect(peakIndex([2, -2])).toBe(0);
   });
 });
 

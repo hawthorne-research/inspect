@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { testAssistantMessage } from "@tsmono/inspect-common/testing";
 
-import { countOptions, isDimmed, labelText, optionMark } from "./categorical";
+import { countOptions, optionStyle, summaryOption } from "./categorical";
 import type { CategoricalField } from "./format";
 import { kindField, rawLayer, rawPart, resolvedLayer } from "./testFixtures";
 
@@ -10,8 +10,12 @@ const field = (options: string[], name = "kind"): CategoricalField => ({
   type: "categorical",
   name,
   description: null,
+  modelLayer: null,
   options,
 });
+
+const tint = (color: string) =>
+  `color-mix(in srgb, var(--inspect-annotation-${color}) 30%, transparent)`;
 
 describe("countOptions", () => {
   it("counts each option across parts, in option order", () => {
@@ -46,50 +50,94 @@ describe("countOptions", () => {
   });
 });
 
-describe("optionMark", () => {
-  it("colours by option index, with yes/no as strong/neutral", () => {
-    expect(optionMark(field(["task_work", "mapping"]), "mapping")).toEqual({
-      color: "var(--inspect-annotation-option-2)",
-      hollow: false,
+describe("optionStyle", () => {
+  it("tints by option index at a fixed opacity", () => {
+    const kinds = field(["task_work", "mapping"]);
+    expect(optionStyle(kinds, "task_work", [])).toEqual({
+      backgroundColor: tint("option-1"),
     });
-    const yesNo = field(["yes", "no"]);
-    expect(optionMark(yesNo, "yes").color).toBe(
-      "var(--inspect-annotation-option-yes)"
-    );
-    expect(optionMark(yesNo, "no").color).toBe(
-      "var(--inspect-annotation-option-none)"
-    );
+    expect(optionStyle(kinds, "mapping", [])).toEqual({
+      backgroundColor: tint("option-2"),
+    });
   });
 
-  it("reuses hues hollow past the eight-colour palette", () => {
-    const many = field(Array.from({ length: 11 }, (_, i) => `o${i}`));
-    expect(optionMark(many, "o7")).toEqual({
-      color: "var(--inspect-annotation-option-8)",
-      hollow: false,
+  it.each([
+    ["yes", "no", ["yes", "no"]],
+    ["yes", "no", ["no", "yes"]],
+    ["1", "0", ["1", "0"]],
+    ["1", "0", ["0", "1"]],
+  ])("tints %s strongly and leaves %s untinted in %j", (on, off, options) => {
+    const flag = field(options);
+    expect(optionStyle(flag, on, [])).toEqual({
+      backgroundColor: tint("option-yes"),
     });
-    expect(optionMark(many, "o9")).toEqual({
-      color: "var(--inspect-annotation-option-2)",
-      hollow: true,
+    expect(optionStyle(flag, off, [])).toBeUndefined();
+  });
+
+  it("tints other two-option fields by index", () => {
+    const awareness = field(["no", "checking_work"]);
+    expect(optionStyle(awareness, "no", [])).toEqual({
+      backgroundColor: tint("option-1"),
     });
+  });
+
+  it("reuses hues hatched past the eight-colour palette", () => {
+    const many = field(Array.from({ length: 18 }, (_, i) => `o${i}`));
+    expect(optionStyle(many, "o7", [])).toEqual({
+      backgroundColor: tint("option-8"),
+    });
+    const hatched = optionStyle(many, "o9", []);
+    expect(hatched?.backgroundColor).toBeUndefined();
+    expect(hatched?.backgroundImage).toContain(
+      "var(--inspect-annotation-option-2)"
+    );
+    expect(optionStyle(many, "o17", [])).toEqual({
+      backgroundColor: tint("option-none"),
+    });
+  });
+
+  it("fades spans the highlight leaves out, tinted or not", () => {
+    const flag = field(["yes", "no"]);
+    expect(optionStyle(flag, "yes", ["yes"])).toEqual({
+      backgroundColor: tint("option-yes"),
+    });
+    expect(optionStyle(flag, "no", ["yes"])).toEqual({ opacity: 0.3 });
+    expect(optionStyle(flag, undefined, ["yes"])).toEqual({ opacity: 0.3 });
   });
 });
 
-describe("labelText", () => {
-  it("names the field on bare yes/no labels", () => {
-    const awareness = field(["no", "checking_work"], "test_awareness");
-    expect(labelText(awareness, "no")).toBe("test_awareness: no");
-    expect(labelText(awareness, "checking_work")).toBe("checking_work");
-  });
-});
+describe("summaryOption", () => {
+  const kinds = field(["task_work", "mapping", "reporting"]);
 
-describe("isDimmed", () => {
-  it("dims nothing without a highlight", () => {
-    expect(isDimmed([], "mapping")).toBe(false);
+  it("is the most frequent option", () => {
+    expect(summaryOption(kinds, ["task_work", "mapping", "mapping"], [])).toBe(
+      "mapping"
+    );
   });
 
-  it("dims spans whose label is not highlighted", () => {
-    expect(isDimmed(["mapping"], "mapping")).toBe(false);
-    expect(isDimmed(["task_work"], "mapping")).toBe(true);
-    expect(isDimmed(["task_work"], undefined)).toBe(true);
+  it("breaks ties by option order", () => {
+    expect(summaryOption(kinds, ["reporting", "mapping"], [])).toBe("mapping");
+  });
+
+  it.each([
+    [["yes", "no"], "yes", "no"],
+    [["1", "0"], "1", "0"],
+  ])(
+    "passes over the untinted option of %j unless nothing else is there",
+    (options, on, off) => {
+      const flag = field(options);
+      expect(summaryOption(flag, [off, off, on, off], [])).toBe(on);
+      expect(summaryOption(flag, [off, off], [])).toBe(off);
+    }
+  );
+
+  it("counts only highlighted options when some are there", () => {
+    const labels = ["task_work", "task_work", "reporting"];
+    expect(summaryOption(kinds, labels, ["reporting"])).toBe("reporting");
+    expect(summaryOption(kinds, labels, ["mapping"])).toBe("task_work");
+  });
+
+  it("is undefined without labels", () => {
+    expect(summaryOption(kinds, [], [])).toBeUndefined();
   });
 });

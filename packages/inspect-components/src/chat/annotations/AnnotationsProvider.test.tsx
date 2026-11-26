@@ -25,10 +25,8 @@ import { ChatMessageRow, resolveMessages } from "..";
 
 import { AnnotationLegend } from "./AnnotationLegend";
 import { AnnotationsProvider } from "./AnnotationsProvider";
-import type { AnnotationView } from "./context";
 import { kPartAttribute, kSpanAttribute } from "./dom";
 import type { ResolvedLayer } from "./layers";
-import { valueScale } from "./numeric";
 import { buildStrip } from "./strip";
 import {
   kindField,
@@ -36,6 +34,7 @@ import {
   rawLayer,
   rawPart,
   resolvedLayer,
+  viewOf,
 } from "./testFixtures";
 
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
@@ -59,8 +58,9 @@ const kMessages: ChatMessage[] = [
   testUserMessage({ id: "u2", content: "**Not annotated**" }),
 ];
 
-// "**Hi**" | "🧭" | "there", with the spaces as gaps; two reasoning
-// paragraphs. Each span has a categorical and a numeric value.
+// Short spans on u1 ("**Hi**" | "🧭" | "there", with the spaces as gaps)
+// and two long ones on a1's reasoning paragraphs. Each span has a
+// categorical and a numeric value.
 const kLayer = rawLayer({
   fields: [kindField, probeField],
   parts: [
@@ -71,6 +71,13 @@ const kLayer = rawLayer({
       values: {
         kind: ["mapping", "mapping", "task_work"],
         deception: [2, 0, -2],
+      },
+      probabilities: {
+        kind: [
+          [0.2, 0.8],
+          [0.4, 0.6],
+          [0.9, 0.1],
+        ],
       },
     }),
     rawPart({
@@ -83,20 +90,12 @@ const kLayer = rawLayer({
   ],
 });
 
-const viewOf = (layer: ResolvedLayer, fieldName: string): AnnotationView => {
-  const field = layer.fields.find((f) => f.name === fieldName);
-  if (!field) throw new Error(fieldName);
-  return {
-    layer,
-    field,
-    scale: field.type === "numeric" ? valueScale(layer, field) : 0,
-    highlighted: [],
-  };
-};
-
-const renderAnnotated = (fieldName: string, layers?: ResolvedLayer[]) => {
+const renderAnnotated = (
+  fieldName: string,
+  { layers, highlight }: { layers?: ResolvedLayer[]; highlight?: string[] } = {}
+) => {
   const layer = resolvedLayer(kLayer, kMessages);
-  const view = viewOf(layer, fieldName);
+  const view = viewOf(layer, fieldName, highlight);
   return render(
     <TrustedContentWrapper>
       <ComponentStateProvider hooks={makeStateHooks()}>
@@ -105,7 +104,7 @@ const renderAnnotated = (fieldName: string, layers?: ResolvedLayer[]) => {
             <AnnotationLegend
               view={view}
               layers={layers ?? [layer]}
-              strip={buildStrip(layer, view.field)}
+              strip={buildStrip(view)}
               onLayerChange={() => {}}
               onFieldChange={() => {}}
               onToggleHighlight={() => {}}
@@ -131,59 +130,84 @@ const renderAnnotated = (fieldName: string, layers?: ResolvedLayer[]) => {
 const spansIn = (element: HTMLElement): HTMLElement[] =>
   Array.from(element.querySelectorAll<HTMLElement>(`[${kSpanAttribute}]`));
 
-describe("a numeric field", () => {
-  it("renders the raw text, not markdown, keeping whitespace", () => {
+/** What a message's annotated part shows: its text, whether any markdown
+ *  rendered, and each span's tag, text and whether it is tinted. */
+const drawnPart = (messageId: string) => {
+  const part = screen
+    .getByTestId(messageId)
+    .querySelector<HTMLElement>(`[${kPartAttribute}]`);
+  if (!part) throw new Error(`no annotated part in ${messageId}`);
+  return {
+    text: part.textContent,
+    markdown: part.querySelector("strong, em") !== null,
+    spans: spansIn(part).map((s) => [
+      s.tagName,
+      s.textContent,
+      s.style.backgroundColor !== "",
+    ]),
+  };
+};
+
+describe("annotated parts", () => {
+  it("draw categorical values on short spans and numeric values on long spans the same way", () => {
+    renderAnnotated("kind");
+    expect(drawnPart("u1")).toEqual({
+      text: "**Hi** 🧭  there",
+      markdown: false,
+      spans: [
+        ["SPAN", "**Hi**", true],
+        ["SPAN", "🧭", true],
+        ["SPAN", "there", true],
+      ],
+    });
+    cleanup();
     renderAnnotated("deception");
-    const part = screen
-      .getByTestId("u1")
-      .querySelector<HTMLElement>(`[${kPartAttribute}]`);
-    expect(part?.textContent).toBe("**Hi** 🧭  there");
-    expect(part?.querySelector("strong")).toBeNull();
+    expect(drawnPart("a1")).toEqual({
+      text: "Go north.\n\nThen *east*.",
+      markdown: false,
+      spans: [
+        ["SPAN", "Go north.", true],
+        ["SPAN", "Then *east*.", true],
+      ],
+    });
   });
 
-  it("renders one span per value, with the gaps between them uncoloured", () => {
+  it("leave a span with no value to show uncoloured", () => {
     renderAnnotated("deception");
-    const spans = spansIn(screen.getByTestId("u1"));
-    expect(spans.map((s) => s.textContent)).toEqual(["**Hi**", "🧭", "there"]);
-    expect(spans.map((s) => s.style.backgroundColor !== "")).toEqual([
+    expect(drawnPart("u1").spans.map(([, , tinted]) => tinted)).toEqual([
       true,
       false,
       true,
     ]);
   });
 
-  it("renders reasoning under its heading", () => {
-    renderAnnotated("deception");
+  it("render reasoning under its heading", () => {
+    renderAnnotated("kind");
     const assistant = screen.getByTestId("a1");
     expect(within(assistant).getByText("Reasoning")).toBeTruthy();
-    expect(spansIn(assistant).map((s) => s.textContent)).toEqual([
-      "Go north.",
-      "Then *east*.",
-    ]);
+    expect(spansIn(assistant)).toHaveLength(2);
   });
 
-  it("shows a hovered span's values in the shared tooltip", () => {
+  it("fade the spans of options the legend's highlight leaves out", () => {
+    renderAnnotated("kind", { highlight: ["task_work"] });
+    expect(
+      spansIn(screen.getByTestId("u1")).map((s) => s.style.opacity)
+    ).toEqual(["0.3", "0.3", ""]);
+  });
+
+  it("show every field of a hovered span's layer in the shared tooltip", () => {
     renderAnnotated("deception");
     const [, , there] = spansIn(screen.getByTestId("u1"));
     if (!there) throw new Error();
     fireEvent.mouseOver(there);
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.textContent).toContain('"there"');
-    expect(tooltip.textContent).toContain("-2");
-    expect(tooltip.textContent).toContain("task_work");
-  });
-});
-
-describe("a categorical field", () => {
-  it("renders each span as a labelled markdown paragraph", async () => {
-    renderAnnotated("kind");
-    const assistant = screen.getByTestId("a1");
-    const spans = spansIn(assistant);
-    expect(spans).toHaveLength(2);
-    expect(within(spans[0] ?? assistant).getByText("mapping")).toBeTruthy();
-    expect(
-      (await within(spans[1] ?? assistant).findByText("east")).tagName
-    ).toBe("EM");
+    expect(within(tooltip).getByText("deception · layer 12")).toBeTruthy();
+    expect(within(tooltip).getByText("-2")).toBeTruthy();
+    expect(within(tooltip).getByText("kind")).toBeTruthy();
+    expect(within(tooltip).getAllByText("task_work")).toHaveLength(2);
+    expect(tooltip.textContent).toContain("task_work 90%");
+    expect(tooltip.textContent).toContain("mapping 10%");
   });
 });
 
@@ -205,10 +229,10 @@ describe("the legend", () => {
       rawLayer({ name: "paragraphs", unit: "paragraph", parts: [] }),
       kMessages
     );
-    renderAnnotated("kind", [layer]);
+    renderAnnotated("kind", { layers: [layer] });
     expect(screen.queryByLabelText("Annotation layer")).toBeNull();
     cleanup();
-    renderAnnotated("kind", [layer, other]);
+    renderAnnotated("kind", { layers: [layer, other] });
     const picker = screen.getByLabelText("Annotation layer");
     expect(
       within(picker)
@@ -217,13 +241,37 @@ describe("the legend", () => {
     ).toEqual(["probes · token", "paragraphs · paragraph"]);
   });
 
-  it("counts each option of a categorical field", () => {
+  it("sums up the layer's source, metadata and spans", () => {
     renderAnnotated("kind");
     const legend = screen.getByRole("region", { name: "Text annotations" });
     expect(
-      within(legend)
-        .getAllByRole("button", { pressed: false })
+      within(legend).getByText(
+        "test · tokenizer: tiktoken/o200k_base · 5 tokens"
+      )
+    ).toBeTruthy();
+  });
+
+  it("counts each option of a categorical field", () => {
+    renderAnnotated("kind");
+    const options = screen.getByRole("group", { name: "Options" });
+    expect(
+      within(options)
+        .getAllByRole("button")
         .map((b) => b.textContent)
     ).toEqual(["task_work2", "mapping3"]);
+  });
+
+  it("shows a numeric field's scale instead of options", () => {
+    renderAnnotated("deception");
+    expect(screen.queryByRole("group", { name: "Options" })).toBeNull();
+    expect(screen.getByTitle(/get full colour/)).toBeTruthy();
+  });
+
+  it("draws one strip segment per span", () => {
+    renderAnnotated("kind");
+    const strip = screen.getByRole("group", {
+      name: "Spans in transcript order",
+    });
+    expect(within(strip).getAllByRole("button")).toHaveLength(5);
   });
 });

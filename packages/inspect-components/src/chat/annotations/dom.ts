@@ -1,4 +1,3 @@
-import type { AnnotationField } from "./format";
 import type { ResolvedLayer, ResolvedPart } from "./layers";
 import type { SpanLocation } from "./strip";
 
@@ -14,15 +13,18 @@ export const spanSelector = ({ part, span }: SpanLocation): string =>
 export interface HoveredSpan {
   part: ResolvedPart;
   span: number;
+  /** The line of the span under the pointer: a span that wraps has one
+   *  box per line. */
   rect: DOMRect;
 }
 
-/** The span under an event target, if the target is a rendered span of
- *  `layer`. */
+/** The span under a mouse event's target, if the target is a rendered span
+ *  of `layer`. */
 export const hoveredSpan = (
-  target: EventTarget | null,
+  event: MouseEvent,
   layer: ResolvedLayer
 ): HoveredSpan | null => {
+  const target = event.target;
   if (!(target instanceof Element)) return null;
   const spanEl = target.closest(`[${kSpanAttribute}]`);
   const partEl = spanEl?.closest(`[${kPartAttribute}]`);
@@ -32,29 +34,21 @@ export const hoveredSpan = (
   if (!part || !Number.isInteger(span) || span >= part.starts.length) {
     return null;
   }
-  return { part, span, rect: spanEl.getBoundingClientRect() };
+  const line = Array.from(spanEl.getClientRects()).find(
+    (r) => event.clientY >= r.top && event.clientY <= r.bottom
+  );
+  return { part, span, rect: line ?? spanEl.getBoundingClientRect() };
 };
 
-/** Rings a span briefly after the strip scrolled to it. A labelled
- *  paragraph also gets a tint; a shaded span keeps its own background. */
-export const flashSpan = (
-  element: Element,
-  rendering: AnnotationField["type"]
-): void => {
+/** Rings a span briefly after the strip scrolled to it. */
+export const flashSpan = (element: Element): void => {
   const ring = "0 0 0 2px var(--bs-primary)";
-  const clear = "0 0 0 2px transparent";
-  const tint = "rgba(var(--bs-primary-rgb), 0.1)";
-  const keyframes: Keyframe[] =
-    rendering === "categorical"
-      ? [
-          { boxShadow: ring, backgroundColor: tint },
-          { boxShadow: ring, backgroundColor: tint, offset: 0.45 },
-          { boxShadow: clear, backgroundColor: "transparent" },
-        ]
-      : [
-          { boxShadow: ring },
-          { boxShadow: ring, offset: 0.5 },
-          { boxShadow: clear },
-        ];
-  element.animate(keyframes, { duration: 1800, easing: "ease-out" });
+  element.animate(
+    [
+      { boxShadow: ring },
+      { boxShadow: ring, offset: 0.5 },
+      { boxShadow: "0 0 0 2px transparent" },
+    ],
+    { duration: 1800, easing: "ease-out" }
+  );
 };

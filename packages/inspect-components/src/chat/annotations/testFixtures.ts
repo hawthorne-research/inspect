@@ -2,6 +2,7 @@ import { testScore } from "@tsmono/inspect-common/testing";
 import type { ChatMessage, Score } from "@tsmono/inspect-common/types";
 
 import { collectAnnotationLayers, type ResolvedLayer } from "./layers";
+import { annotationView, type AnnotationView } from "./view";
 
 // Raw `text_annotations` data for this module's tests: the format is JSON
 // read as `unknown`, so builders return plain objects for tests to break.
@@ -18,6 +19,13 @@ export const suspectsField = {
   description: null,
   type: "categorical",
   options: ["yes", "no"],
+};
+
+export const flagField = {
+  name: "flag",
+  description: null,
+  type: "categorical",
+  options: ["1", "0"],
 };
 
 export const probeField = {
@@ -40,7 +48,7 @@ export const rawLayer = (overrides: Record<string, unknown> = {}) => ({
   name: "probes",
   unit: "token",
   source: "test",
-  tokenizer: "tiktoken/o200k_base",
+  metadata: { tokenizer: "tiktoken/o200k_base" },
   description: null,
   fields: [probeField],
   parts: [rawPart()],
@@ -71,4 +79,15 @@ export const resolvedLayer = (
   const [resolved] = layers;
   if (!resolved || errors.length > 0) throw new Error(errors.join("; "));
   return resolved;
+};
+
+/** The view of field `name` of `layer`; throws when it has no such field. */
+export const viewOf = (
+  layer: ResolvedLayer,
+  name: string,
+  highlight: readonly string[] = []
+): AnnotationView => {
+  const field = layer.fields.find((f) => f.name === name);
+  if (!field) throw new Error(`no field ${name}`);
+  return annotationView(layer, field, highlight);
 };

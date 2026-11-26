@@ -5,19 +5,21 @@ export const kTextAnnotationsKey = "text_annotations";
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
-export interface CategoricalField {
-  type: "categorical";
+interface FieldBase {
   name: string;
   description: string | null;
+  /** The model layer a probe read, when the values come from one; always
+   *  null for a categorical field, which the format gives none. */
+  modelLayer: number | null;
+}
+
+export interface CategoricalField extends FieldBase {
+  type: "categorical";
   options: readonly string[];
 }
 
-export interface NumericField {
+export interface NumericField extends FieldBase {
   type: "numeric";
-  name: string;
-  description: string | null;
-  /** The model layer a probe read, when the values come from one. */
-  modelLayer: number | null;
 }
 
 export type AnnotationField = CategoricalField | NumericField;
@@ -43,11 +45,13 @@ export interface AnnotationPart {
  *  paragraph labels or a set of probes' per-token values. */
 export interface AnnotationLayer {
   name: string;
-  /** What one span is, e.g. "paragraph" or "token". */
+  /** What one span is, for display only, e.g. "paragraph" or "token". */
   unit: string;
   /** What produced the values. */
   source: string;
-  tokenizer: string | null;
+  /** How the layer was made, e.g. `{ tokenizer: "tiktoken/o200k_base" }`:
+   *  JSON values by key, shown as they are. */
+  metadata: Readonly<Record<string, unknown>>;
   description: string | null;
   fields: readonly AnnotationField[];
   parts: readonly AnnotationPart[];
@@ -90,7 +94,7 @@ const parseLayer = (raw: unknown): Parsed<AnnotationLayer> => {
   const name = raw["name"];
   const unit = raw["unit"];
   const source = raw["source"];
-  const tokenizer = raw["tokenizer"] ?? null;
+  const metadata = raw["metadata"] === undefined ? {} : raw["metadata"];
   const description = raw["description"] ?? null;
   if (typeof name !== "string" || !name) {
     return fail("name is not a non-empty string");
@@ -99,9 +103,7 @@ const parseLayer = (raw: unknown): Parsed<AnnotationLayer> => {
     return fail("unit is not a non-empty string");
   }
   if (typeof source !== "string") return fail("source is not a string");
-  if (tokenizer !== null && typeof tokenizer !== "string") {
-    return fail("tokenizer is not a string");
-  }
+  if (!isRecord(metadata)) return fail("metadata is not an object");
   if (description !== null && typeof description !== "string") {
     return fail("description is not a string");
   }
@@ -128,7 +130,7 @@ const parseLayer = (raw: unknown): Parsed<AnnotationLayer> => {
       name,
       unit,
       source,
-      tokenizer,
+      metadata,
       description,
       fields: fields.value,
       parts,
@@ -171,7 +173,10 @@ const parseField = (raw: unknown): Parsed<AnnotationField> => {
       return fail("options are not unique");
     }
     if (options.length < 2) return fail("fewer than two options");
-    return { ok: true, value: { type, name, description, options } };
+    return {
+      ok: true,
+      value: { type, name, description, modelLayer: null, options },
+    };
   }
   if (type === "numeric") {
     const modelLayer = raw["model_layer"] ?? null;
@@ -327,8 +332,17 @@ export const fail = (error: string): { ok: false; error: string } => ({
   error,
 });
 
-/** A field's name, with the model layer a numeric field read, if any. */
+/** A field's name, with the model layer a probe read, if any. */
 export const fieldLabel = (field: AnnotationField): string =>
-  field.type === "numeric" && field.modelLayer !== null
+  field.modelLayer !== null
     ? `${field.name} · layer ${field.modelLayer}`
     : field.name;
+
+/** A number of spans with the layer's unit, e.g. "10,226 tokens". */
+export const spanCountLabel = (count: number, unit: string): string =>
+  `${count.toLocaleString()} ${count === 1 ? unit : `${unit}s`}`;
+
+/** A layer metadata value as text: strings as they are, other values as
+ *  JSON. */
+export const metadataText = (value: unknown): string =>
+  typeof value === "string" ? value : JSON.stringify(value);

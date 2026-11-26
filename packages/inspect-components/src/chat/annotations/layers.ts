@@ -171,7 +171,7 @@ export const resolveLayer = (
       name: layer.name,
       unit: layer.unit,
       source: layer.source,
-      tokenizer: layer.tokenizer,
+      metadata: layer.metadata,
       description: layer.description,
       fields: layer.fields,
       parts,
@@ -254,33 +254,6 @@ export const codePointOffsets = (text: string): number[] => {
 /** The text of span `span` of `part`. */
 export const spanText = (part: ResolvedPart, span: number): string =>
   part.text.slice(part.starts[span] ?? 0, part.ends[span] ?? 0);
-
-/** A run of a part's text: one of its spans, or the text between spans. */
-export interface TextSegment {
-  text: string;
-  /** The span's index in its part; undefined between spans. */
-  span?: number;
-}
-
-/** Cuts a part's text into its spans and the runs between them, dropping
- *  runs that are only whitespace. */
-export const textSegments = (part: ResolvedPart): TextSegment[] => {
-  const segments: TextSegment[] = [];
-  const pushGap = (from: number, to: number) => {
-    const gap = part.text.slice(from, to);
-    if (gap.trim()) segments.push({ text: gap });
-  };
-  let cursor = 0;
-  for (let span = 0; span < part.starts.length; span++) {
-    const start = part.starts[span] ?? cursor;
-    const end = part.ends[span] ?? start;
-    pushGap(cursor, start);
-    segments.push({ text: part.text.slice(start, end), span });
-    cursor = end;
-  }
-  pushGap(cursor, part.text.length);
-  return segments;
-};
 
 /** One entry per content entry of the merged system row (a string content
  *  counts as one entry), mirroring `mergedSystemMessage`. */

@@ -14,13 +14,13 @@ export { kTextAnnotationsKey, parseTextAnnotations } from "./format";
 export type { CollectedLayers, ResolvedLayer, ResolvedPart } from "./layers";
 export { collectAnnotationLayers, warnAnnotations } from "./layers";
 
-export { valueScale } from "./numeric";
+export type { AnnotationView } from "./view";
+export { annotationView } from "./view";
 
-export type { LabelSegment, PeakBin, SpanLocation, StripData } from "./strip";
+export type { SpanLocation, StripSegment } from "./strip";
 export { buildStrip } from "./strip";
 
 export { flashSpan, spanSelector } from "./dom";
 
-export type { AnnotationView } from "./context";
 export { AnnotationsProvider } from "./AnnotationsProvider";
 export { AnnotationLegend } from "./AnnotationLegend";

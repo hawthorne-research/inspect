@@ -8,16 +8,16 @@ import {
   type ChatViewListHandle,
 } from "@tsmono/inspect-components/chat";
 import {
+  annotationView,
   buildStrip,
   collectAnnotationLayers,
   flashSpan,
   spanSelector,
-  valueScale,
   warnAnnotations,
   type AnnotationView,
   type ResolvedLayer,
   type SpanLocation,
-  type StripData,
+  type StripSegment,
 } from "@tsmono/inspect-components/chat/annotations";
 import { useProperty } from "@tsmono/react/hooks";
 
@@ -31,7 +31,7 @@ const kNoHighlight: readonly string[] = [];
 export interface SampleAnnotations {
   view: AnnotationView;
   layers: readonly ResolvedLayer[];
-  strip: StripData;
+  strip: readonly StripSegment[];
   setLayer: (id: string) => void;
   setField: (name: string) => void;
   toggleHighlight: (option: string) => void;
@@ -85,14 +85,15 @@ export function useSampleAnnotations(
     layer.fields.find((f) => f.name === fieldName) ?? layer.fields[0];
   if (!field) return undefined;
 
-  const highlighted =
-    field.type === "categorical" &&
-    highlight.layer === layer.id &&
-    highlight.field === field.name
-      ? highlight.options.filter((o) => field.options.includes(o))
-      : kNoHighlight;
-  const scale = field.type === "numeric" ? valueScale(layer, field) : 0;
-  const strip = buildStrip(layer, field, messageNumbers(sample.messages));
+  const view = annotationView(
+    layer,
+    field,
+    highlight.layer === layer.id && highlight.field === field.name
+      ? highlight.options
+      : kNoHighlight
+  );
+  const { highlighted } = view;
+  const strip = buildStrip(view, messageNumbers(sample.messages));
   const systemIds = new Set(
     sample.messages.flatMap((m) => (m.role === "system" && m.id ? [m.id] : []))
   );
@@ -110,7 +111,7 @@ export function useSampleAnnotations(
         chrome: legend,
         messageId,
         selector: spanSelector(location),
-        onLanded: (element) => flashSpan(element, field.type),
+        onLanded: flashSpan,
       });
     // System messages render folded into the list's one merged system row.
     const found =
@@ -124,7 +125,7 @@ export function useSampleAnnotations(
   };
 
   return {
-    view: { layer, field, scale, highlighted },
+    view,
     layers,
     strip,
     setLayer,

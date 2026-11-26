@@ -29,7 +29,7 @@ const labelLayer = (part: Record<string, unknown> = {}) =>
   rawLayer({
     name: "paragraph labels",
     unit: "paragraph",
-    tokenizer: null,
+    metadata: undefined,
     fields: [kindField, suspectsField],
     parts: [
       rawPart({
@@ -105,20 +105,42 @@ describe("parseTextAnnotations", () => {
     expect(layerError(rawLayer({ parts: [] }))).toBeUndefined();
   });
 
-  it("fills a missing description, tokenizer and model layer with null", () => {
+  it("fills a missing description and model layer with null", () => {
     const layer = parsedLayer(
       rawLayer({
         description: undefined,
-        tokenizer: undefined,
         fields: [{ name: "p", type: "numeric" }],
         parts: [],
       })
     );
     expect(layer.description).toBeNull();
-    expect(layer.tokenizer).toBeNull();
     expect(layer.fields).toEqual([
       { type: "numeric", name: "p", description: null, modelLayer: null },
     ]);
+  });
+
+  it("keeps a layer's metadata, of any JSON values", () => {
+    const metadata = {
+      tokenizer: "tiktoken/o200k_base",
+      threshold: 0.5,
+      layers: [16, 24],
+      run: { seed: 1, tags: null },
+    };
+    expect(parsedLayer(rawLayer({ metadata })).metadata).toEqual(metadata);
+  });
+
+  it("reads missing metadata as empty", () => {
+    expect(parsedLayer(labelLayer()).metadata).toEqual({});
+  });
+
+  it.each([
+    ["null", null],
+    ["a list", ["tiktoken/o200k_base"]],
+    ["a string", "tiktoken/o200k_base"],
+  ])("rejects metadata that is %s", (_name, metadata) => {
+    expect(layerError(rawLayer({ metadata }))).toBe(
+      'layer "probes": metadata is not an object'
+    );
   });
 
   it.each([
