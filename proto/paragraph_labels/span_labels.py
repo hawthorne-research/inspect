@@ -42,7 +42,10 @@ class LabelQuestion(BaseModel):
     """What the question asks."""
 
     options: list[str]
-    """Possible answers (at least two). Yes/no questions use `["yes", "no"]`."""
+    """Possible answers (at least two).
+
+    Yes/no questions use `["yes", "no"]` or `["1", "0"]`.
+    """
 
     @model_validator(mode="after")
     def _check_options(self) -> "LabelQuestion":

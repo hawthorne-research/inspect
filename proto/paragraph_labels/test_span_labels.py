@@ -185,3 +185,25 @@ def test_scorer_labels_paragraphs_deterministically() -> None:
     third = anyio.run(other, state, Target(""))
     assert third is not None
     assert third.model_dump() != first.model_dump()
+
+
+def test_random_classifier_gives_one_at_yes_rate() -> None:
+    reasoning = "\n\n".join(f"Paragraph {index}." for index in range(400))
+    state = TaskState(
+        model=ModelName("mockllm/model"),
+        sample_id="s1",
+        epoch=1,
+        input="Go.",
+        messages=[
+            ChatMessageAssistant(
+                id="m1", content=[ContentReasoning(reasoning=reasoning)]
+            )
+        ],
+    )
+    question = LabelQuestion(name="suspects_test", options=["1", "0"])
+    scorer = span_labels([question], random_classifier("seed", yes_rate=0.1), "random")
+    result = anyio.run(scorer, state, Target(""))
+    assert result is not None and isinstance(result.value, dict)
+    assert sum(result.value.values()) == 400
+    # position weights would make "1" two-thirds likely
+    assert 0 < result.value["1"] / 400 < 0.25

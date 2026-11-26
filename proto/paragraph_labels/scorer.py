@@ -155,15 +155,16 @@ def random_classifier(
     The probabilities for a question are a Dirichlet draw (normalised gamma
     draws) with parameters `concentration * prior`, rounded to two decimals.
     A small concentration gives peaked distributions whose most probable
-    option roughly follows the prior. For yes/no questions the prior of "yes"
-    is `yes_rate`; for other questions it falls off with the option's
-    position (1, 1/2, 1/3, ... normalised), so earlier options are more common.
+    option roughly follows the prior. For yes/no questions, whose options are
+    "yes" and "no" or "1" and "0", the prior of "yes" or "1" is `yes_rate`;
+    for other questions it falls off with the option's position (1, 1/2,
+    1/3, ... normalised), so earlier options are more common.
 
     Args:
         seed: Extra seed text, e.g. the eval id, so that samples with the
             same id in different logs get different labels.
         concentration: Total of the Dirichlet parameters.
-        yes_rate: Prior probability of "yes" for yes/no questions.
+        yes_rate: Prior probability of "yes" or "1" for yes/no questions.
     """
 
     async def classify(
@@ -186,8 +187,9 @@ def random_classifier(
 
 
 def _prior(question: LabelQuestion, yes_rate: float) -> dict[str, float]:
-    if set(question.options) == {"yes", "no"}:
-        return {"yes": yes_rate, "no": 1.0 - yes_rate}
+    for positive, negative in (("yes", "no"), ("1", "0")):
+        if set(question.options) == {positive, negative}:
+            return {positive: yes_rate, negative: 1.0 - yes_rate}
     weights = [1.0 / (position + 1) for position in range(len(question.options))]
     return {
         option: weight / sum(weights)
