@@ -41,12 +41,6 @@ import { JsonMessageContent } from "./JsonMessageContent";
 import { MessageCitations } from "./MessageCitations";
 import styles from "./MessageContent.module.css";
 import { ServerToolCall } from "./server-tools/ServerToolCall";
-import { LabelledReasoning } from "./span-labels/LabelledReasoning";
-import {
-  segmentText,
-  warnSpanLabels,
-  type LabelledSpan,
-} from "./span-labels/spanLabels";
 import { ToolOutput } from "./tools/ToolOutput";
 import { ContentTool } from "./types";
 
@@ -63,13 +57,9 @@ type ContentObject =
 
 type Contents = string | string[] | ContentObject[];
 
-/** Labelled spans for reasoning parts, keyed by the part object. */
-type ReasoningSpans = ReadonlyMap<ContentReasoning, readonly LabelledSpan[]>;
-
 interface MessageContentProps {
   contents: Contents;
   references?: MarkdownReference[];
-  reasoningSpans?: ReasoningSpans;
 }
 
 export const isMessageContent = (
@@ -90,7 +80,6 @@ export const isMessageContent = (
 export const MessageContent: FC<MessageContentProps> = ({
   contents,
   references,
-  reasoningSpans,
 }) => {
   const displayMode = useDisplayMode();
   const normalized = normalizeContent(contents, displayMode);
@@ -108,8 +97,7 @@ export const MessageContent: FC<MessageContentProps> = ({
           },
           index === normalized.length - 1,
           displayMode,
-          references,
-          reasoningSpans
+          references
         );
       } else {
         return renderContent(
@@ -117,8 +105,7 @@ export const MessageContent: FC<MessageContentProps> = ({
           content,
           index === normalized.length - 1,
           displayMode,
-          references,
-          reasoningSpans
+          references
         );
       }
     });
@@ -151,8 +138,7 @@ const renderContent = (
   content: ContentObject,
   isLast: boolean,
   displayMode: DisplayMode,
-  references?: MarkdownReference[],
-  reasoningSpans?: ReasoningSpans
+  references?: MarkdownReference[]
 ): ReactNode => {
   switch (content.type) {
     case "text": {
@@ -187,26 +173,6 @@ const renderContent = (
     }
     case "reasoning": {
       const r = content;
-
-      const spans = reasoningSpans?.get(r);
-      if (spans && !r.redacted && r.reasoning) {
-        const segments = segmentText(r.reasoning, spans);
-        if (segments.ok) {
-          return (
-            <div
-              key={key}
-              data-content-kind="reasoning"
-              className={clsx(styles.reasoning, "text-size-small")}
-            >
-              <div className={clsx("text-style-label", "text-style-secondary")}>
-                Reasoning
-              </div>
-              <LabelledReasoning segments={segments.value} />
-            </div>
-          );
-        }
-        warnSpanLabels(segments.error);
-      }
 
       // Possible titles
       let title = "Reasoning";

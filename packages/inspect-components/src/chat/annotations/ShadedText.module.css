@@ -1,0 +1,15 @@
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* Room for the span backgrounds between wrapped lines. */
+  line-height: 1.6;
+}
+
+.text:not(:last-child) {
+  margin-bottom: 0.6rem;
+}
+
+.monospace {
+  font-family: var(--bs-font-monospace);
+  font-size: var(--inspect-font-size-smaller);
+}

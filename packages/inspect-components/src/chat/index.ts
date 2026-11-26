@@ -73,31 +73,8 @@ export {
   ChatViewVirtualList,
 } from "./ChatViewVirtualList";
 
-// Paragraph-level span labels (classifier output stored in a sample score)
 export type {
-  LabelledSpan,
-  LoadedSpanLabels,
-  SpanLabelQuestion,
-  SpanLabels,
-} from "./span-labels/spanLabels";
-export { loadSpanLabels, warnSpanLabels } from "./span-labels/spanLabels";
-export type { SpanLabelsView } from "./span-labels/SpanLabelsContext";
-export { SpanLabelsContext } from "./span-labels/SpanLabelsContext";
-export { SpanLabelsLegend } from "./span-labels/SpanLabelsLegend";
-export type { StripSegment } from "./span-labels/stripSegments";
-export { buildStripSegments } from "./span-labels/stripSegments";
-
-// Per-token probe values (stored in a sample score), drawn as a heatmap
-export type {
-  LoadedTokenValues,
-  TokenPart,
-  TokenProbe,
-} from "./token-values/tokenValues";
-export { loadTokenValues, warnTokenValues } from "./token-values/tokenValues";
-export type { TokenBin } from "./token-values/tokenScale";
-export { binTokens, tokenScale } from "./token-values/tokenScale";
-export { flashToken, tokenSelector } from "./token-values/tokenDom";
-export type { TokenValuesView } from "./token-values/TokenValuesContext";
-export { TokenValuesContext } from "./token-values/TokenValuesContext";
-export { TokenValuesLegend } from "./token-values/TokenValuesLegend";
-export type { TokenStripBin } from "./token-values/TokenStrip";
+  MessagePartRenderer,
+  PartRenderOptions,
+} from "./MessagePartRenderer";
+export { MessagePartRendererContext } from "./MessagePartRenderer";

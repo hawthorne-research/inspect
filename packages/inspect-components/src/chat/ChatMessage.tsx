@@ -20,13 +20,12 @@ import { RecordTree } from "../content/RecordTree";
 import styles from "./ChatMessage.module.css";
 import { MessageContent } from "./MessageContent";
 import { MessageContents } from "./MessageContents";
+import {
+  renderMessageParts,
+  useMessagePartRenderer,
+} from "./MessagePartRenderer";
 import { hasServerToolUse, Message } from "./messages";
 import { ServerToolCall } from "./server-tools/ServerToolCall";
-import { labelledReasoningParts } from "./span-labels/spanLabels";
-import { useSpanLabels } from "./span-labels/SpanLabelsContext";
-import { TokenValuedContent } from "./token-values/TokenValuedContent";
-import { messageTokenParts } from "./token-values/tokenValues";
-import { useTokenValues } from "./token-values/TokenValuesContext";
 import {
   codexToolMarkdown,
   formatSubagentNotifications,
@@ -70,19 +69,8 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
 
   const [mouseOver, setMouseOver] = useState(false);
 
-  // Labelled reasoning and token values are what the reader came to see,
-  // and the overview strips scroll to them, so their message starts
-  // expanded rather than clipped.
-  const spanLabels = useSpanLabels();
-  const reasoningSpans = spanLabels
-    ? labelledReasoningParts(spanLabels.spansByPart, message)
-    : undefined;
-  const tokenValues = useTokenValues();
-  const tokenParts = tokenValues
-    ? messageTokenParts(tokenValues.values, message)
-    : undefined;
-  const collapseContent =
-    reasoningSpans === undefined && tokenParts === undefined;
+  const partRenderer = useMessagePartRenderer();
+  const collapseContent = !(partRenderer?.startsExpanded(message) ?? false);
 
   const isNonSubagentTool =
     message.role === "tool" &&
@@ -232,18 +220,18 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
                   collapse={collapseContent}
                   lines={25}
                 >
-                  {tokenValues && tokenParts ? (
-                    <TokenValuedContent
-                      contents={segment.contents}
-                      parts={tokenParts}
-                      view={tokenValues}
-                      references={references}
-                    />
-                  ) : (
+                  {renderMessageParts(
+                    partRenderer,
+                    message,
+                    segment.contents,
+                    { toolOutput: false },
+                    (rest) => (
+                      <MessageContent contents={rest} references={references} />
+                    )
+                  ) ?? (
                     <MessageContent
                       contents={segment.contents}
                       references={references}
-                      reasoningSpans={reasoningSpans}
                     />
                   )}
                 </ExpandablePanel>
@@ -259,6 +247,19 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
       </div>
     );
   }
+
+  const customParts = renderMessageParts(
+    partRenderer,
+    message,
+    message.content,
+    { toolOutput: isNonSubagentTool },
+    (rest) =>
+      isNonSubagentTool ? (
+        <ToolOutput output={rest.filter((c) => c.type !== "tool_use")} />
+      ) : (
+        <MessageContent contents={rest} references={references} />
+      )
+  );
 
   return (
     <div
@@ -291,14 +292,8 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
                 : 15
           }
         >
-          {tokenValues && tokenParts ? (
-            <TokenValuedContent
-              contents={message.content}
-              parts={tokenParts}
-              view={tokenValues}
-              references={references}
-              tool={isNonSubagentTool}
-            />
+          {customParts ? (
+            customParts
           ) : isNonSubagentTool ? (
             toolSearchNamespaces ? (
               <ToolSearchView namespaces={toolSearchNamespaces} />
@@ -323,7 +318,6 @@ export const ChatMessage: FC<ChatMessageProps> = memo(function ChatMessage({
               key={`${id}-contents`}
               message={message}
               references={references}
-              reasoningSpans={reasoningSpans}
             />
           )}
         </ExpandablePanel>

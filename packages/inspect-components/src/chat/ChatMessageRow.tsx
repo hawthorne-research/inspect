@@ -13,13 +13,17 @@ import {
 import { ChatMessage } from "./ChatMessage";
 import styles from "./ChatMessageRow.module.css";
 import { MessageLabel } from "./MessageLabel";
+import {
+  renderMessageParts,
+  useMessagePartRenderer,
+} from "./MessagePartRenderer";
 import { hasServerToolUse, ResolvedMessage } from "./messages";
 import { hasVisibleContent } from "./rowsModel";
-import { ToolTokenOutput } from "./token-values/TokenValuedContent";
-import { messageTokenParts } from "./token-values/tokenValues";
-import { useTokenValues } from "./token-values/TokenValuesContext";
 import { ClientToolCall } from "./tools/ClientToolCall";
 import { resolveToolInput, substituteToolCallContent } from "./tools/tool";
+import { ToolBlockOutput } from "./tools/ToolBlock";
+import { ToolCallErrorView } from "./tools/ToolCallErrorView";
+import { ToolOutput } from "./tools/ToolOutput";
 import {
   ChatViewDisplayOptions,
   ChatViewLabelOptions,
@@ -72,7 +76,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const rowSelection = useSelectableRow(
     resolvedMessage.message.id ?? undefined
   );
-  const tokenValues = useTokenValues();
+  const partRenderer = useMessagePartRenderer();
   const headerLeading = rowSelection ? (
     <RowSelectCheckbox selection={rowSelection} item="message" />
   ) : undefined;
@@ -162,10 +166,17 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 
       // Resolve the tool output
       const resolvedToolOutput = resolveToolMessage(toolMessage);
-      const toolTokenParts =
-        tokenValues && toolMessage
-          ? messageTokenParts(tokenValues.values, toolMessage)
-          : undefined;
+      const customOutput = toolMessage
+        ? renderMessageParts(
+            partRenderer,
+            toolMessage,
+            toolMessage.content,
+            { toolOutput: true },
+            (rest) => (
+              <ToolOutput output={rest.filter((c) => c.type !== "tool_use")} />
+            )
+          )
+        : undefined;
 
       const resolvedToolView = tool_call.view
         ? substituteToolCallContent(tool_call.view, tool_call.arguments)
@@ -194,12 +205,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             output={resolvedToolOutput}
             error={toolMessage?.error ?? undefined}
             outputOverride={
-              tokenValues && toolMessage && toolTokenParts ? (
-                <ToolTokenOutput
-                  message={toolMessage}
-                  parts={toolTokenParts}
-                  view={tokenValues}
-                />
+              customOutput ? (
+                <ToolBlockOutput>
+                  {toolMessage?.error ? (
+                    <ToolCallErrorView error={toolMessage.error} />
+                  ) : null}
+                  {customOutput}
+                </ToolBlockOutput>
               ) : undefined
             }
             view={resolvedToolView}

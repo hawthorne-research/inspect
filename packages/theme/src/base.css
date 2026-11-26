@@ -87,24 +87,25 @@
   --inspect-msg-label-border: #e4e4e9;
   --inspect-msg-label-text: #5f5f68;
 
-  /* Paragraph span labels: categorical slots assigned by option index
+  /* Text annotations, categorical fields: slots assigned by option index
      (CVD-checked order), a strong "yes" and a neutral for "no"/unknown. */
-  --inspect-span-label-1: #2a78d6;
-  --inspect-span-label-2: #eb6834;
-  --inspect-span-label-3: #1baf7a;
-  --inspect-span-label-4: #eda100;
-  --inspect-span-label-5: #e87ba4;
-  --inspect-span-label-6: #008300;
-  --inspect-span-label-7: #6250d6;
-  --inspect-span-label-8: #e34948;
-  --inspect-span-label-yes: #eb6834;
-  --inspect-span-label-none: #a9abaf;
+  --inspect-annotation-option-1: #2a78d6;
+  --inspect-annotation-option-2: #eb6834;
+  --inspect-annotation-option-3: #1baf7a;
+  --inspect-annotation-option-4: #eda100;
+  --inspect-annotation-option-5: #e87ba4;
+  --inspect-annotation-option-6: #008300;
+  --inspect-annotation-option-7: #6250d6;
+  --inspect-annotation-option-8: #e34948;
+  --inspect-annotation-option-yes: #eb6834;
+  --inspect-annotation-option-none: #a9abaf;
 
-  /* Token values: a diverging pair drawn as backgrounds behind text at up
-     to 80% opacity, clear at zero. Each keeps body text at >= 5:1 contrast
-     at full intensity on the body background. */
-  --inspect-token-value-negative: #257de0;
-  --inspect-token-value-positive: #ec4647;
+  /* Text annotations, numeric fields: a diverging pair drawn as
+     backgrounds behind text at up to 80% opacity, clear at zero. Each
+     keeps body text at >= 5:1 contrast at full intensity on the body
+     background. */
+  --inspect-annotation-value-negative: #257de0;
+  --inspect-annotation-value-positive: #ec4647;
 
   /* Tool block (header/edge/zones) tokens: neutral by default so the
      design-consistent look holds when Event Colors is off; the readable
@@ -160,19 +161,19 @@
   --inspect-msg-label-border: #3a3a40;
   --inspect-msg-label-text: #b4b4bd;
 
-  --inspect-span-label-1: #3987e5;
-  --inspect-span-label-2: #d95926;
-  --inspect-span-label-3: #199e70;
-  --inspect-span-label-4: #c98500;
-  --inspect-span-label-5: #d55181;
-  --inspect-span-label-6: #008300;
-  --inspect-span-label-7: #9085e9;
-  --inspect-span-label-8: #e66767;
-  --inspect-span-label-yes: #d95926;
-  --inspect-span-label-none: #67696f;
+  --inspect-annotation-option-1: #3987e5;
+  --inspect-annotation-option-2: #d95926;
+  --inspect-annotation-option-3: #199e70;
+  --inspect-annotation-option-4: #c98500;
+  --inspect-annotation-option-5: #d55181;
+  --inspect-annotation-option-6: #008300;
+  --inspect-annotation-option-7: #9085e9;
+  --inspect-annotation-option-8: #e66767;
+  --inspect-annotation-option-yes: #d95926;
+  --inspect-annotation-option-none: #67696f;
 
-  --inspect-token-value-negative: #1b64be;
-  --inspect-token-value-positive: #c0392b;
+  --inspect-annotation-value-negative: #1b64be;
+  --inspect-annotation-value-positive: #c0392b;
 
   --inspect-readable-user-bg: #262421;
   --inspect-readable-user-border: #8e8881;
