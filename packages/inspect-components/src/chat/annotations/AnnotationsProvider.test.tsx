@@ -30,15 +30,15 @@ import {
   buildStrip,
   colorScheme,
   type Palette,
-  type ResolvedLayer,
+  type ResolvedSet,
 } from "./model";
 import {
   findingField,
   kindField,
   probeField,
-  rawLayer,
   rawPart,
-  resolvedLayer,
+  rawSet,
+  resolvedSet,
   viewOf,
 } from "./model/testFixtures";
 
@@ -66,7 +66,7 @@ const kMessages: ChatMessage[] = [
 // Short spans on u1 ("**Hi**" | "🧭" | "there", with the spaces as gaps)
 // and two long ones on a1's reasoning paragraphs. Each span has two
 // categorical values and a numeric one.
-const kLayer = rawLayer({
+const kSet = rawSet({
   fields: [kindField, findingField, probeField],
   parts: [
     rawPart({
@@ -103,19 +103,25 @@ const kLayer = rawLayer({
 const renderAnnotated = (
   fieldName: string,
   {
-    layers,
+    sets,
+    unit,
     highlight,
     palette,
     onCycleScheme,
   }: {
-    layers?: ResolvedLayer[];
+    sets?: ResolvedSet[];
+    /** Replaces the set's unit "token". */
+    unit?: string | null;
     highlight?: string[];
     palette?: Palette;
     onCycleScheme?: (step: 1 | -1) => void;
   } = {}
 ) => {
-  const layer = resolvedLayer(kLayer, kMessages);
-  const view = viewOf(layer, fieldName, highlight, palette);
+  const set = resolvedSet(
+    unit === undefined ? kSet : { ...kSet, unit },
+    kMessages
+  );
+  const view = viewOf(set, fieldName, highlight, palette);
   return render(
     <TrustedContentWrapper>
       <ComponentStateProvider hooks={makeStateHooks()}>
@@ -123,9 +129,9 @@ const renderAnnotated = (
           <AnnotationsProvider view={view} messages={kMessages}>
             <AnnotationLegend
               view={view}
-              layers={layers ?? [layer]}
+              sets={sets ?? [set]}
               strip={buildStrip(view)}
-              onLayerChange={() => {}}
+              onSetChange={() => {}}
               onFieldChange={() => {}}
               onToggleHighlight={() => {}}
               onClearHighlight={() => {}}
@@ -254,7 +260,7 @@ describe("annotated parts", () => {
     ).toEqual(["0.3", "0.3", ""]);
   });
 
-  it("show every field of a hovered span's layer in the shared tooltip", () => {
+  it("show every field of a hovered span's set in the shared tooltip", () => {
     renderAnnotated("deception");
     const [, , there] = spansIn(screen.getByTestId("u1"));
     if (!there) throw new Error();
@@ -294,7 +300,7 @@ describe("annotated parts", () => {
   });
 });
 
-describe("messages without spans in the layer", () => {
+describe("messages without spans in the set", () => {
   it.each(["kind", "deception"])("render as usual (%s)", async (field) => {
     renderAnnotated(field);
     const plain = screen.getByTestId("u2");
@@ -306,22 +312,26 @@ describe("messages without spans in the layer", () => {
 });
 
 describe("the legend", () => {
-  it("offers a layer picker only when there is more than one layer", () => {
-    const layer = resolvedLayer(kLayer, kMessages);
-    const other = resolvedLayer(
-      rawLayer({ name: "paragraphs", unit: "paragraph", parts: [] }),
+  it("offers a set picker only when there is more than one set", () => {
+    const set = resolvedSet(kSet, kMessages);
+    const other = resolvedSet(
+      rawSet({ name: "paragraphs", unit: "paragraph", parts: [] }),
       kMessages
     );
-    renderAnnotated("kind", { layers: [layer] });
-    expect(screen.queryByLabelText("Annotation layer")).toBeNull();
+    const unitless = resolvedSet(
+      rawSet({ name: "judge", unit: undefined, parts: [] }),
+      kMessages
+    );
+    renderAnnotated("kind", { sets: [set] });
+    expect(screen.queryByLabelText("Annotation set")).toBeNull();
     cleanup();
-    renderAnnotated("kind", { layers: [layer, other] });
-    const picker = screen.getByLabelText("Annotation layer");
+    renderAnnotated("kind", { sets: [set, other, unitless] });
+    const picker = screen.getByLabelText("Annotation set");
     expect(
       within(picker)
         .getAllByRole("option")
         .map((o) => o.textContent)
-    ).toEqual(["probes · token", "paragraphs · paragraph"]);
+    ).toEqual(["probes · token", "paragraphs · paragraph", "judge · span"]);
   });
 
   it("names the colour scheme and cycles it forwards, or back on shift-click", () => {
@@ -335,12 +345,22 @@ describe("the legend", () => {
     expect(onCycleScheme.mock.calls).toEqual([[1], [-1]]);
   });
 
-  it("sums up the layer's source, metadata and spans", () => {
+  it("sums up the set's source, metadata and spans", () => {
     renderAnnotated("kind");
     const legend = screen.getByRole("region", { name: "Text annotations" });
     expect(
       within(legend).getByText(
         "test · tokenizer: tiktoken/o200k_base · 5 tokens"
+      )
+    ).toBeTruthy();
+  });
+
+  it("calls the spans of a set without a unit spans", () => {
+    renderAnnotated("kind", { unit: null });
+    const legend = screen.getByRole("region", { name: "Text annotations" });
+    expect(
+      within(legend).getByText(
+        "test · tokenizer: tiktoken/o200k_base · 5 spans"
       )
     ).toBeTruthy();
   });

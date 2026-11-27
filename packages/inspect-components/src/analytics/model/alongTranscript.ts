@@ -2,16 +2,17 @@ import type { Score } from "@tsmono/inspect-common/types";
 import { isRecord } from "@tsmono/util";
 
 import {
-  alignLayers,
+  alignSets,
   fieldColumn,
-  layerId,
   rollUp,
+  setId,
   spanCountLabel,
+  spanNoun,
   type Aggregation,
   type CategoricalField,
   type FieldCell,
   type FieldColumn,
-  type LayerFields,
+  type SetFields,
   type SpanPosition,
   type SpanRow,
 } from "../../chat/annotations/model";
@@ -24,10 +25,10 @@ import {
   type LinearMap,
 } from "./scales";
 import {
-  alignedLayers,
+  alignedSets,
   sampleKey,
   spanKey,
-  type LayerInfo,
+  type SetInfo,
   type SpanTable,
 } from "./spanTable";
 
@@ -41,16 +42,16 @@ export interface AnalyticsSample {
   scores: Readonly<Record<string, ScoreValue>>;
 }
 
-/** A field of a layer. */
+/** A field of an annotation set. */
 export interface FieldRef {
-  layer: string;
+  set: string;
   field: string;
 }
 
-/** A numeric field drawn as a line over the x layer's spans. */
+/** A numeric field drawn as a line over the x set's spans. */
 export interface SeriesParams extends FieldRef {
-  /** How the field's values within each x span combine when its layer's
-   *  spans are not the x layer's (they are rolled up onto them). */
+  /** How the field's values within each x span combine when its set's
+   *  spans are not the x set's (they are rolled up onto them). */
   aggregation: Aggregation;
   /** Where to draw a dashed reference line on the series' axis. */
   reference: number | null;
@@ -61,8 +62,8 @@ export interface SeriesParams extends FieldRef {
 
 /** The parameters of the "along the transcript" view. */
 export interface AlongTranscriptParams {
-  /** The layer whose spans make the x axis: a sample's k-th span is at
-   *  x = k. */
+  /** The annotation set whose spans make the x axis: a sample's k-th span
+   *  is at x = k. */
   x: string;
   /** At most two numeric fields: the first on the left axis, the second on
    *  its own axis on the right. */
@@ -87,7 +88,7 @@ export const kAggregations: readonly Aggregation[] = [
   "count",
 ];
 
-/** One span of the x layer in a panel. */
+/** One span of the x set in a panel. */
 export interface PanelPoint {
   /** 1 for the sample's first span. */
   x: number;
@@ -109,8 +110,8 @@ export interface PanelMarker {
 /** One sample's plot. */
 export interface Panel {
   sample: AnalyticsSample;
-  /** The x layer's id in the sample (`layerId` of its score and name). */
-  layerId: string;
+  /** The x set's id in the sample (`setId` of its score and name). */
+  setId: string;
   title: string;
   spanCount: number;
   points: readonly PanelPoint[];
@@ -131,8 +132,8 @@ export interface PanelGroup {
 /** A series with its axis, shared by every panel. */
 export interface SeriesAxis extends SeriesParams {
   label: string;
-  /** The field's layer has other spans than the x layer, so its values are
-   *  rolled up onto the x layer's spans with `aggregation`. */
+  /** The field's set has other spans than the x set, so its values are
+   *  rolled up onto the x set's spans with `aggregation`. */
   rolledUp: boolean;
   domain: Domain;
   ticks: readonly number[];
@@ -140,8 +141,9 @@ export interface SeriesAxis extends SeriesParams {
 
 export interface AlongTranscript {
   params: AlongTranscriptParams;
-  /** What one x span is, e.g. "paragraph". */
-  unit: string;
+  /** What one x span is called, e.g. "paragraph" (`spanNoun` of the x
+   *  set's unit). */
+  spanNoun: string;
   groups: readonly PanelGroup[];
   /** The left axis's series first. */
   series: readonly SeriesAxis[];
@@ -151,21 +153,21 @@ export interface AlongTranscript {
   /** The plot's y domain. */
   yDomain: Domain;
   marker: { label: string; field: CategoricalField } | null;
-  /** Samples without every chosen layer, which have no panel. */
+  /** Samples without every chosen set, which have no panel. */
   omitted: number;
 }
 
 /**
  * The "along the transcript" view of `table`: one panel per sample of
- * `samples` that has every chosen layer, with the series and markers over
- * the x layer's spans in transcript order. Fields of other layers join the
- * x layer's spans directly when the layers have the same spans
- * (`alignLayers`) and are rolled up onto them otherwise (`rollUp`). Panels
+ * `samples` that has every chosen set, with the series and markers over
+ * the x set's spans in transcript order. Fields of other sets join the
+ * x set's spans directly when the sets have the same spans
+ * (`alignSets`) and are rolled up onto them otherwise (`rollUp`). Panels
  * are grouped by their `groupBy` score's value and ordered by sample id and
  * epoch; series axes are shared across panels.
  *
- * Throws as `alignLayers` and `rollUp` do, e.g. when a sample has two
- * spans of a chosen layer at the same position.
+ * Throws as `alignSets` and `rollUp` do, e.g. when a sample has two
+ * spans of a chosen set at the same position.
  */
 export const alongTranscript = (
   table: SpanTable,
@@ -175,29 +177,30 @@ export const alongTranscript = (
   const series = params.series.slice(0, kMaxSeries);
   const chosen = new Set([
     params.x,
-    ...series.map((s) => s.layer),
-    ...(params.marker ? [params.marker.layer] : []),
+    ...series.map((s) => s.set),
+    ...(params.marker ? [params.marker.set] : []),
   ]);
 
   const present = new Map<string, Set<string>>();
   for (const row of table.rows) {
     const key = sampleKey(row.id, row.epoch);
-    const layers = present.get(key) ?? new Set<string>();
-    layers.add(row.layer);
-    present.set(key, layers);
+    const sets = present.get(key) ?? new Set<string>();
+    sets.add(row.annotation_set);
+    present.set(key, sets);
   }
   const shown = [...samples]
     .filter((sample) => {
-      const layers = present.get(sampleKey(sample.id, sample.epoch));
-      return layers !== undefined && [...chosen].every((l) => layers.has(l));
+      const sets = present.get(sampleKey(sample.id, sample.epoch));
+      return sets !== undefined && [...chosen].every((name) => sets.has(name));
     })
     .sort(compareSamples);
   const keys = new Set(shown.map((s) => sampleKey(s.id, s.epoch)));
   const rows = table.rows.filter(
-    (row) => chosen.has(row.layer) && keys.has(sampleKey(row.id, row.epoch))
+    (row) =>
+      chosen.has(row.annotation_set) && keys.has(sampleKey(row.id, row.epoch))
   );
 
-  const aligned = alignedLayers(rows, params.x);
+  const aligned = alignedSets(rows, params.x);
   const join = (ref: FieldRef, aggregation: Aggregation) =>
     rows.length === 0
       ? new Map<string, FieldCell>()
@@ -205,7 +208,7 @@ export const alongTranscript = (
           rows,
           params.x,
           ref,
-          aligned.has(ref.layer) ? "aligned" : aggregation,
+          aligned.has(ref.set) ? "aligned" : aggregation,
           table.categoricalFields
         );
   const seriesCells = series.map((s) => join(s, s.aggregation));
@@ -218,14 +221,15 @@ export const alongTranscript = (
 
   const xRows = new Map<string, SpanRow[]>();
   for (const row of rows) {
-    if (row.layer !== params.x) continue;
+    if (row.annotation_set !== params.x) continue;
     const key = sampleKey(row.id, row.epoch);
     const spans = xRows.get(key) ?? [];
     spans.push(row);
     xRows.set(key, spans);
   }
 
-  const unit = table.layers.find((l) => l.name === params.x)?.unit ?? "span";
+  const unit = table.sets.find((s) => s.name === params.x)?.unit ?? null;
+  const noun = spanNoun(unit);
   const oneId = new Set(shown.map((s) => String(s.id))).size <= 1;
   const negative = markerField?.negative ?? [];
   const panels = shown.map((sample): Panel => {
@@ -249,7 +253,7 @@ export const alongTranscript = (
     const score = spans[0]?.score;
     return {
       sample,
-      layerId: score === undefined ? "" : layerId(score, params.x),
+      setId: score === undefined ? "" : setId(score, params.x),
       title: panelTitle(
         sample,
         oneId,
@@ -276,10 +280,10 @@ export const alongTranscript = (
       }
     }
     const domain = fixEnds(niceDomain(extent(values) ?? [0, 1]), s.min, s.max);
-    const rolledUp = !aligned.has(s.layer);
+    const rolledUp = !aligned.has(s.set);
     return {
       ...s,
-      label: `${s.layer} · ${s.field}${rolledUp ? ` (${s.aggregation} per ${unit})` : ""}`,
+      label: `${s.set} · ${s.field}${rolledUp ? ` (${s.aggregation} per ${noun})` : ""}`,
       rolledUp,
       domain,
       ticks: ticks(domain),
@@ -289,7 +293,7 @@ export const alongTranscript = (
 
   return {
     params,
-    unit,
+    spanNoun: noun,
     groups:
       params.groupBy === null
         ? [{ value: null, panels }]
@@ -300,7 +304,7 @@ export const alongTranscript = (
     marker:
       params.marker && markerField
         ? {
-            label: `${params.marker.layer} · ${params.marker.field}`,
+            label: `${params.marker.set} · ${params.marker.field}`,
             field: markerField,
           }
         : null,
@@ -314,26 +318,26 @@ const cellsOnX = (
   x: string,
   ref: FieldRef,
   join: Aggregation | "aligned",
-  fields: LayerFields
+  fields: SetFields
 ): Map<string, FieldCell> => {
   const column = fieldColumn(ref.field);
-  if (ref.layer === x) {
+  if (ref.set === x) {
     return new Map(
       rows
-        .filter((row) => row.layer === x)
+        .filter((row) => row.annotation_set === x)
         .map((row) => [spanKey(row), row[column] ?? null])
     );
   }
-  // Only the one field travels, so the layers' other fields can't clash.
+  // Only the one field travels, so the sets' other fields can't clash.
   const input: SpanRow[] = [];
   for (const row of rows) {
-    if (row.layer === x) input.push(withField(row, null));
-    else if (row.layer === ref.layer) input.push(withField(row, column));
+    if (row.annotation_set === x) input.push(withField(row, null));
+    else if (row.annotation_set === ref.set) input.push(withField(row, column));
   }
   const joined =
     join === "aligned"
-      ? alignLayers(input, [x, ref.layer])
-      : rollUp(input, ref.layer, x, join, fields);
+      ? alignSets(input, [x, ref.set])
+      : rollUp(input, ref.set, x, join, fields);
   return new Map(joined.map((row) => [spanKey(row), row[column] ?? null]));
 };
 
@@ -346,7 +350,7 @@ const withField = (row: SpanRow, column: FieldColumn | null): SpanRow => {
     id: row.id,
     epoch: row.epoch,
     score: row.score,
-    layer: row.layer,
+    annotation_set: row.annotation_set,
     unit: row.unit,
     message_id: row.message_id,
     message_index: row.message_index,
@@ -361,10 +365,10 @@ const withField = (row: SpanRow, column: FieldColumn | null): SpanRow => {
 };
 
 const categoricalField = (
-  fields: LayerFields,
-  { layer, field }: FieldRef
+  fields: SetFields,
+  { set, field }: FieldRef
 ): CategoricalField | undefined => {
-  const options = fields[layer]?.[field];
+  const options = fields[set]?.[field];
   return options
     ? {
         type: "categorical",
@@ -464,22 +468,20 @@ const groupPanels = (panels: readonly Panel[], score: string): PanelGroup[] => {
     .map(([value, group]) => ({ value, panels: group }));
 };
 
-/** The fields of `kind` of every layer. */
-export const layerFields = (
-  layers: readonly LayerInfo[],
+/** The fields of `kind` of every set. */
+export const setFields = (
+  sets: readonly SetInfo[],
   kind: "numeric" | "categorical"
 ): FieldRef[] =>
-  layers.flatMap((layer) =>
-    layer[kind].map((field) => ({ layer: layer.name, field }))
-  );
+  sets.flatMap((set) => set[kind].map((field) => ({ set: set.name, field })));
 
-/** The scores of `samples` that hold no annotation layer of `table`: what
+/** The scores of `samples` that hold no annotation set of `table`: what
  *  panels can be grouped by. */
 export const sampleScores = (
   table: SpanTable,
   samples: readonly AnalyticsSample[]
 ): string[] => {
-  const annotations = new Set(table.layers.flatMap((layer) => layer.scores));
+  const annotations = new Set(table.sets.flatMap((set) => set.scores));
   const names = new Set<string>();
   for (const sample of samples) {
     for (const name of Object.keys(sample.scores)) {
@@ -490,22 +492,22 @@ export const sampleScores = (
 };
 
 /**
- * Parameters to start from: the first layer with a numeric field as x, that
- * field as the one series, the first categorical field of a layer with the
- * x layer's spans as markers, message boundaries, and the samples' score
+ * Parameters to start from: the first set with a numeric field as x, that
+ * field as the one series, the first categorical field of a set with the
+ * x set's spans as markers, message boundaries, and the samples' score
  * when they have exactly one besides the annotation scores.
  */
 export const defaultParams = (
   table: SpanTable,
   samples: readonly AnalyticsSample[]
 ): AlongTranscriptParams => {
-  const x = table.layers.find((l) => l.numeric.length > 0) ?? table.layers[0];
+  const x = table.sets.find((s) => s.numeric.length > 0) ?? table.sets[0];
   const field = x?.numeric[0];
-  const aligned = x ? alignedLayers(table.rows, x.name) : new Set<string>();
-  const markerLayer = table.layers.find(
-    (l) => aligned.has(l.name) && l.categorical.length > 0
+  const aligned = x ? alignedSets(table.rows, x.name) : new Set<string>();
+  const markerSet = table.sets.find(
+    (s) => aligned.has(s.name) && s.categorical.length > 0
   );
-  const markerField = markerLayer?.categorical[0];
+  const markerField = markerSet?.categorical[0];
   const [score, ...others] = sampleScores(table, samples);
   return {
     x: x?.name ?? "",
@@ -513,7 +515,7 @@ export const defaultParams = (
       x && field !== undefined
         ? [
             {
-              layer: x.name,
+              set: x.name,
               field,
               aggregation: "mean",
               reference: null,
@@ -523,8 +525,8 @@ export const defaultParams = (
           ]
         : [],
     marker:
-      markerLayer && markerField !== undefined
-        ? { layer: markerLayer.name, field: markerField }
+      markerSet && markerField !== undefined
+        ? { set: markerSet.name, field: markerField }
         : null,
     messageBoundaries: true,
     groupBy: score !== undefined && others.length === 0 ? score : null,
@@ -534,7 +536,7 @@ export const defaultParams = (
 
 /**
  * `stored` parameters (e.g. remembered from another log) checked against
- * `table` and `samples`: each that names a layer, field or score they
+ * `table` and `samples`: each that names a set, field or score they
  * don't have, or is malformed, takes its value from `defaultParams`.
  */
 export const resolveParams = (
@@ -545,13 +547,13 @@ export const resolveParams = (
   let defaults: AlongTranscriptParams | undefined;
   const fallback = () => (defaults ??= defaultParams(table, samples));
   if (!isRecord(stored)) return fallback();
-  const layers = new Map(table.layers.map((layer) => [layer.name, layer]));
+  const sets = new Map(table.sets.map((set) => [set.name, set]));
   const { x, series, marker, messageBoundaries, groupBy, columns } = stored;
-  const parsedSeries = parseSeries(series, layers);
+  const parsedSeries = parseSeries(series, sets);
   const parsedMarker =
-    marker === null ? null : parseFieldRef(marker, layers, "categorical");
+    marker === null ? null : parseFieldRef(marker, sets, "categorical");
   return {
-    x: typeof x === "string" && layers.has(x) ? x : fallback().x,
+    x: typeof x === "string" && sets.has(x) ? x : fallback().x,
     series: parsedSeries ?? fallback().series,
     marker: parsedMarker === undefined ? fallback().marker : parsedMarker,
     messageBoundaries:
@@ -577,15 +579,13 @@ export const resolveParams = (
 
 const parseFieldRef = (
   raw: unknown,
-  layers: ReadonlyMap<string, LayerInfo>,
+  sets: ReadonlyMap<string, SetInfo>,
   kind: "numeric" | "categorical"
 ): FieldRef | undefined => {
   if (!isRecord(raw)) return undefined;
-  const { layer, field } = raw;
-  if (typeof layer !== "string" || typeof field !== "string") return undefined;
-  return layers.get(layer)?.[kind].includes(field)
-    ? { layer, field }
-    : undefined;
+  const { set, field } = raw;
+  if (typeof set !== "string" || typeof field !== "string") return undefined;
+  return sets.get(set)?.[kind].includes(field) ? { set, field } : undefined;
 };
 
 /** A finite number, or null for null or a missing value; undefined for
@@ -614,12 +614,12 @@ const isAggregation = (value: unknown): value is Aggregation =>
 /** Undefined unless every entry is a valid series. */
 const parseSeries = (
   raw: unknown,
-  layers: ReadonlyMap<string, LayerInfo>
+  sets: ReadonlyMap<string, SetInfo>
 ): SeriesParams[] | undefined => {
   if (!Array.isArray(raw) || raw.length > kMaxSeries) return undefined;
   const series: SeriesParams[] = [];
   for (const entry of raw) {
-    const ref = parseFieldRef(entry, layers, "numeric");
+    const ref = parseFieldRef(entry, sets, "numeric");
     if (!ref || !isRecord(entry)) return undefined;
     const { aggregation } = entry;
     if (!isAggregation(aggregation)) return undefined;

@@ -42,7 +42,7 @@ const kParams: AlongTranscriptParams = {
   x: "P(eval)",
   series: [
     {
-      layer: "P(eval)",
+      set: "P(eval)",
       field: "p_eval",
       aggregation: "mean",
       reference: 0.5,
@@ -50,7 +50,7 @@ const kParams: AlongTranscriptParams = {
       max: null,
     },
     {
-      layer: "monitor",
+      set: "monitor",
       field: "log10_p",
       aggregation: "mean",
       reference: null,
@@ -58,7 +58,7 @@ const kParams: AlongTranscriptParams = {
       max: null,
     },
   ],
-  marker: { layer: "confidence", field: "confidence" },
+  marker: { set: "confidence", field: "confidence" },
   messageBoundaries: true,
   groupBy: "outcome",
   columns: 2,
@@ -127,7 +127,7 @@ describe("AlongTranscriptControls", () => {
       <AlongTranscriptControls
         params={params}
         view={alongTranscript(table, samples, params)}
-        layers={table.layers}
+        sets={table.sets}
         scores={sampleScores(table, samples)}
         onChange={onChange}
       />
@@ -145,7 +145,7 @@ describe("AlongTranscriptControls", () => {
       series: [
         kParams.series[0],
         {
-          layer: "probes",
+          set: "probes",
           field: "deception",
           aggregation: "mean",
           reference: null,
@@ -164,7 +164,7 @@ describe("AlongTranscriptControls", () => {
       ...kParams,
       series: [
         {
-          layer: "probes",
+          set: "probes",
           field: "deception",
           aggregation: "max",
           reference: null,

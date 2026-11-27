@@ -15,7 +15,7 @@ import type {
 import { kMergedSystemMessageId, resolveMessages } from "..";
 
 import { chatPartFinder, hasAnnotatedPart } from "./chatParts";
-import { rawLayer, rawPart, resolvedLayer } from "./model/testFixtures";
+import { rawPart, rawSet, resolvedSet } from "./model/testFixtures";
 
 const reasoning = (text: string): ContentReasoning => ({
   type: "reasoning",
@@ -42,8 +42,8 @@ const kMessages: ChatMessage[] = [
   testToolMessage({ id: "t1", content: "ok" }),
 ];
 
-const layer = resolvedLayer(
-  rawLayer({
+const set = resolvedSet(
+  rawSet({
     parts: [
       rawPart({
         message_id: "s1",
@@ -63,7 +63,7 @@ const layer = resolvedLayer(
   }),
   kMessages
 );
-const find = chatPartFinder(layer, kMessages);
+const find = chatPartFinder(set, kMessages);
 
 describe("chatPartFinder", () => {
   it("finds a string content's part and an array content's part", () => {

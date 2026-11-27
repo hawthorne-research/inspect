@@ -97,13 +97,13 @@ const panelPlot = ({
       ariaDescription: "markers",
     });
 
-  const unit = view.unit;
+  const noun = view.spanNoun;
   const tipText = (point: PanelPoint): string =>
     [
-      `${unit} ${point.x} of ${panel.spanCount} · message index ${point.messageIndex}`,
+      `${noun} ${point.x} of ${panel.spanCount} · message index ${point.messageIndex}`,
       ...series.map((s, i) => {
         const value = point.values[i];
-        return `${s.layer} · ${s.field}: ${value === null || value === undefined ? "—" : formatValue(value)}`;
+        return `${s.set} · ${s.field}: ${value === null || value === undefined ? "—" : formatValue(value)}`;
       }),
       ...(marker ? [`${marker.label}: ${point.marker ?? "—"}`] : []),
       "Click to open in Messages",
@@ -152,7 +152,7 @@ const panelPlot = ({
       ),
       Plot.axisX({
         ticks: 6,
-        label: `${unit.charAt(0).toUpperCase()}${unit.slice(1)} in the sample`,
+        label: `${noun.charAt(0).toUpperCase()}${noun.slice(1)} in the sample`,
         labelAnchor: "center",
         labelArrow: "none",
       }),

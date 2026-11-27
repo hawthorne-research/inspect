@@ -327,7 +327,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   };
   const annotations = useSampleAnnotations(sample, legendTargets);
   // A `?span=` link (e.g. from a click in Analytics) lands on its span once
-  // the sample, its layers and the span's message row have arrived.
+  // the sample, its annotation sets and the span's message row have arrived.
   const spanTarget = sampleDetailNavigation.span;
   useAttemptUntilDone(
     messagesTabOpen && spanTarget ? JSON.stringify(spanTarget) : null,
@@ -1210,9 +1210,9 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                       >
                         <AnnotationLegend
                           view={annotations.view}
-                          layers={annotations.layers}
+                          sets={annotations.sets}
                           strip={annotations.strip}
-                          onLayerChange={annotations.setLayer}
+                          onSetChange={annotations.selectSet}
                           onFieldChange={annotations.setField}
                           onToggleHighlight={annotations.toggleHighlight}
                           onClearHighlight={annotations.clearHighlight}

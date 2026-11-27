@@ -1,11 +1,11 @@
-import type { ResolvedLayer, ResolvedPart, SpanLocation } from "./model";
+import type { ResolvedPart, ResolvedSet, SpanLocation } from "./model";
 
 // Spans are found by attribute, not per-span handlers: a sample can hold
 // tens of thousands of them.
 export const kPartAttribute = "data-annotation-part";
 export const kSpanAttribute = "data-annotation-span";
 
-/** Selects a rendered span of the active layer. */
+/** Selects a rendered span of the active annotation set. */
 export const spanSelector = ({ part, span }: SpanLocation): string =>
   `[${kPartAttribute}="${part}"] [${kSpanAttribute}="${span}"]`;
 
@@ -18,17 +18,17 @@ export interface HoveredSpan {
 }
 
 /** The span under a mouse event's target, if the target is a rendered span
- *  of `layer`. */
+ *  of `set`. */
 export const hoveredSpan = (
   event: MouseEvent,
-  layer: ResolvedLayer
+  set: ResolvedSet
 ): HoveredSpan | null => {
   const target = event.target;
   if (!(target instanceof Element)) return null;
   const spanEl = target.closest(`[${kSpanAttribute}]`);
   const partEl = spanEl?.closest(`[${kPartAttribute}]`);
   if (!spanEl || !partEl) return null;
-  const part = layer.parts[Number(partEl.getAttribute(kPartAttribute))];
+  const part = set.parts[Number(partEl.getAttribute(kPartAttribute))];
   const span = Number(spanEl.getAttribute(kSpanAttribute));
   if (!part || !Number.isInteger(span) || span >= part.starts.length) {
     return null;

@@ -82,7 +82,7 @@ export const AlongTranscriptSection: FC<AlongTranscriptSectionProps> = ({
       <AlongTranscriptControls
         params={params}
         view={view.ok ? view.value : undefined}
-        layers={table.layers}
+        sets={table.sets}
         scores={sampleScores(table, samples)}
         oneSample={oneSample}
         onChange={setParams}
@@ -115,8 +115,8 @@ const withLayoutOf = (
   return { ...rest, groupBy: stored["groupBy"], columns: stored["columns"] };
 };
 
-// Data that two spans can't share a position in (e.g. a layer name used by
-// two scores) makes the view throw; that is shown, not a crash.
+// Data that two spans can't share a position in (e.g. an annotation set name
+// used by two scores) makes the view throw; that is shown, not a crash.
 const viewOf = (
   table: SpanTable,
   samples: readonly AnalyticsSample[],
@@ -133,7 +133,7 @@ const viewOf = (
 };
 
 /** Opens a panel's span in its sample's Messages tab, in the panel's x
- *  layer unless the layer on screen has the same span. */
+ *  annotation set unless the set on screen has the same span. */
 const useOpenSpan = () => {
   const navigate = useNavigate();
   const builder = useSampleUrlBuilder();
@@ -143,7 +143,7 @@ const useOpenSpan = () => {
     navigate(
       sampleSpanUrl(
         builder,
-        { position: point.position, layer: panel.layerId },
+        { position: point.position, set: panel.setId },
         logPath,
         panel.sample.id,
         panel.sample.epoch

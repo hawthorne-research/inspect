@@ -8,8 +8,8 @@ import type { EvalSample, Score } from "@tsmono/inspect-common/types";
 
 import {
   annotatedScore,
-  rawLayer,
   rawPart,
+  rawSet,
 } from "../../chat/annotations/model/testFixtures";
 
 import type { AnalyticsSample } from "./alongTranscript";
@@ -60,10 +60,13 @@ export interface FixtureSample {
   confidence?: readonly string[];
   /** Per token: a1 has four, a2 two. */
   probes?: readonly number[];
+  /** The unit of the sets on paragraphs; "paragraph" by default. */
+  paragraphUnit?: string | null;
 }
 
-/** A sample with the layers given: "P(eval)", "monitor" and "confidence"
- *  on its paragraphs, "probes" on its tokens, and an "outcome" score. */
+/** A sample with the annotation sets given: "P(eval)", "monitor" and
+ *  "confidence" on its paragraphs, "probes" on its tokens, and an "outcome"
+ *  score. */
 export const fixtureSample = ({
   id = "maze",
   epoch,
@@ -72,14 +75,15 @@ export const fixtureSample = ({
   log10,
   confidence,
   probes,
+  paragraphUnit = "paragraph",
 }: FixtureSample): EvalSample => {
   const scores: Record<string, Score> = {};
   if (outcome !== undefined) scores["outcome"] = testScore({ value: outcome });
   if (pEval) {
     scores["p_eval"] = annotatedScore([
-      rawLayer({
+      rawSet({
         name: "P(eval)",
-        unit: "paragraph",
+        unit: paragraphUnit,
         fields: [numericField("p_eval")],
         parts: paragraphParts({ p_eval: pEval }),
       }),
@@ -87,9 +91,9 @@ export const fixtureSample = ({
   }
   if (log10) {
     scores["monitor"] = annotatedScore([
-      rawLayer({
+      rawSet({
         name: "monitor",
-        unit: "paragraph",
+        unit: paragraphUnit,
         fields: [numericField("log10_p")],
         parts: paragraphParts({ log10_p: log10 }),
       }),
@@ -97,9 +101,9 @@ export const fixtureSample = ({
   }
   if (confidence) {
     scores["labels"] = annotatedScore([
-      rawLayer({
+      rawSet({
         name: "confidence",
-        unit: "paragraph",
+        unit: paragraphUnit,
         fields: [kConfidenceField],
         parts: paragraphParts({ confidence }),
       }),
@@ -107,7 +111,7 @@ export const fixtureSample = ({
   }
   if (probes) {
     scores["probes"] = annotatedScore([
-      rawLayer({
+      rawSet({
         name: "probes",
         unit: "token",
         fields: [numericField("deception")],

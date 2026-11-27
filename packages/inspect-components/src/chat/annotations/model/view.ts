@@ -1,12 +1,12 @@
 import { optionStyle } from "./categorical";
 import type { AnnotationField } from "./format";
-import type { ResolvedLayer, ResolvedPart } from "./layers";
 import { fieldScale, formatValue, valueStyle } from "./numeric";
 import type { Palette, SpanStyle } from "./schemes";
+import type { ResolvedPart, ResolvedSet } from "./sets";
 
-/** The annotation layer on screen and the field that colours its spans. */
+/** The annotation set on screen and the field that colours its spans. */
 export interface AnnotationView {
-  layer: ResolvedLayer;
+  set: ResolvedSet;
   field: AnnotationField;
   /** Options of a categorical `field` kept at full strength; empty keeps
    *  all. */
@@ -20,26 +20,26 @@ export interface AnnotationView {
 
 const kNone: readonly string[] = [];
 
-/** The view of `field` of `layer`, keeping the `highlight`ed options the
+/** The view of `field` of `set`, keeping the `highlight`ed options the
  *  field has. */
 export const annotationView = (
-  layer: ResolvedLayer,
+  set: ResolvedSet,
   field: AnnotationField,
   highlight: readonly string[],
   palette: Palette
 ): AnnotationView => {
   if (field.type === "numeric") {
     return {
-      layer,
+      set,
       field,
       highlighted: kNone,
-      scale: fieldScale(layer, field),
+      scale: fieldScale(set, field),
       palette,
     };
   }
   const highlighted = highlight.filter((o) => field.options.includes(o));
   return {
-    layer,
+    set,
     field,
     highlighted: highlighted.length > 0 ? highlighted : kNone,
     scale: 0,
@@ -80,7 +80,7 @@ export interface SpanValue {
   text: string;
   /** The value of a numeric field; undefined for a categorical one. */
   number: number | undefined;
-  /** Each option's probability, most likely first; empty when the layer
+  /** Each option's probability, most likely first; empty when the set
    *  has none for the field. */
   probabilities: readonly OptionProbability[];
 }

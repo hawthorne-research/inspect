@@ -236,8 +236,8 @@
     "explanation": "9 paragraphs, 2 fields",
     "metadata": {
      "text_annotations": {
-      "version": 1,
-      "layers": [
+      "version": 2,
+      "sets": [
        {
         "name": "paragraph labels",
         "unit": "paragraph",
@@ -541,8 +541,8 @@
     "explanation": "526 tokens, 4 fields",
     "metadata": {
      "text_annotations": {
-      "version": 1,
-      "layers": [
+      "version": 2,
+      "sets": [
        {
         "name": "probes",
         "unit": "token",

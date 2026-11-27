@@ -22,9 +22,9 @@ export const AnnotatedPart: FC<AnnotatedPartProps> = ({ part, toolOutput }) => {
   const view = useAnnotationView();
   const body = (
     <div
-      // A new layer's spans mount fresh: reconciling thousands of spans
-      // into a few inserts them one at a time.
-      key={view?.layer.id}
+      // A new annotation set's spans mount fresh: reconciling thousands of
+      // spans into a few inserts them one at a time.
+      key={view?.set.id}
       {...{ [kPartAttribute]: part.index }}
       className={clsx(styles.text, toolOutput && styles.monospace)}
     >

@@ -9,15 +9,15 @@ const kTooltipWidth = 320;
 
 interface OverviewStripProps {
   segments: readonly StripSegment[];
-  /** What one span is, e.g. "token". */
-  unit: string;
+  /** The annotation set's unit, e.g. "token" (see `spanNoun`). */
+  unit: string | null;
   onSelect: (location: SpanLocation) => void;
 }
 
 /**
- * The layer's spans in transcript order, one segment per span or per run
- * of spans, coloured like the span each shows. Hovering shows that span;
- * clicking asks the host to scroll to it.
+ * The annotation set's spans in transcript order, one segment per span or
+ * per run of spans, coloured like the span each shows. Hovering shows that
+ * span; clicking asks the host to scroll to it.
  */
 export const OverviewStrip: FC<OverviewStripProps> = ({
   segments,

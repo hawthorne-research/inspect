@@ -1,8 +1,15 @@
 import type { AnnotationField, AnnotationMetadata } from "./format";
 
-/** A number of spans with the layer's unit, e.g. "10,226 tokens". */
-export const spanCountLabel = (count: number, unit: string): string =>
-  `${count.toLocaleString()} ${count === 1 ? unit : `${unit}s`}`;
+/** What one span of an annotation set is called: its unit, e.g.
+ *  "paragraph", or "span" when it has none. The unit is only ever shown. */
+export const spanNoun = (unit: string | null): string => unit ?? "span";
+
+/** A number of spans of an annotation set with the `unit`, e.g. "10,226
+ *  tokens" (see `spanNoun`). */
+export const spanCountLabel = (count: number, unit: string | null): string => {
+  const noun = spanNoun(unit);
+  return `${count.toLocaleString()} ${count === 1 ? noun : `${noun}s`}`;
+};
 
 /** A metadata value as text: strings as they are, other values as JSON. */
 export const metadataText = (value: unknown): string =>

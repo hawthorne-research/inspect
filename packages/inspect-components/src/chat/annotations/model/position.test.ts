@@ -12,7 +12,7 @@ import {
   parseSpanOffsets,
   type SpanPosition,
 } from "./position";
-import { kindField, rawLayer, rawPart, resolvedLayer } from "./testFixtures";
+import { kindField, rawPart, rawSet, resolvedSet } from "./testFixtures";
 
 const kMessages: ChatMessage[] = [
   // The emoji is two UTF-16 units but one code point.
@@ -37,8 +37,8 @@ const part = (
     values: { kind: starts.map(() => "task_work") },
   });
 
-const kLayer = resolvedLayer(
-  rawLayer({
+const kSet = resolvedSet(
+  rawSet({
     fields: [kindField],
     parts: [part("a1", 0, [0, 8], [6, 15]), part("u1", null, [2, 10], [9, 18])],
   }),
@@ -48,7 +48,7 @@ const kLayer = resolvedLayer(
 describe("locateSpan", () => {
   it("finds the span at a position by its stored code-point offsets", () => {
     expect(
-      locateSpan(kLayer, {
+      locateSpan(kSet, {
         messageId: "u1",
         contentIndex: null,
         start: 10,
@@ -56,7 +56,7 @@ describe("locateSpan", () => {
       })
     ).toEqual({ part: 0, span: 1 });
     expect(
-      locateSpan(kLayer, {
+      locateSpan(kSet, {
         messageId: "a1",
         contentIndex: 0,
         start: 8,
@@ -65,14 +65,14 @@ describe("locateSpan", () => {
     ).toEqual({ part: 1, span: 1 });
   });
 
-  it("finds nothing where the layer has no span with exactly those ends", () => {
+  it("finds nothing where the set has no span with exactly those ends", () => {
     const misses: SpanPosition[] = [
       { messageId: "a1", contentIndex: 0, start: 8, end: 14 },
       { messageId: "a1", contentIndex: 1, start: 8, end: 15 },
       { messageId: "a2", contentIndex: 0, start: 8, end: 15 },
     ];
     for (const position of misses) {
-      expect(locateSpan(kLayer, position)).toBeUndefined();
+      expect(locateSpan(kSet, position)).toBeUndefined();
     }
   });
 });

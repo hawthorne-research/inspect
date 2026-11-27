@@ -32,8 +32,8 @@ export const SampleAnalytics: FC<SampleAnalyticsProps> = ({
             <details className={styles.problems}>
               <summary>
                 {table.errors.length === 1
-                  ? "1 annotation layer was left out as invalid"
-                  : `${table.errors.length} annotation layers were left out as invalid`}
+                  ? "1 annotation set was left out as invalid"
+                  : `${table.errors.length} annotation sets were left out as invalid`}
               </summary>
               <ul>
                 {table.errors.map((error) => (

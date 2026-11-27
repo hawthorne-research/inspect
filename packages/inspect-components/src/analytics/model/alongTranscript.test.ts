@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { layerId } from "../../chat/annotations/model";
+import { setId } from "../../chat/annotations/model";
 
 import {
   alongTranscript,
@@ -22,11 +22,11 @@ const full = (epoch: number, outcome: string): FixtureSample => ({
 });
 
 const series = (
-  layer: string,
+  set: string,
   field: string,
   overrides: Partial<SeriesParams> = {}
 ): SeriesParams => ({
-  layer,
+  set,
   field,
   aggregation: "mean",
   reference: null,
@@ -40,7 +40,7 @@ const params = (
 ): AlongTranscriptParams => ({
   x: "P(eval)",
   series: [series("P(eval)", "p_eval"), series("monitor", "log10_p")],
-  marker: { layer: "confidence", field: "confidence" },
+  marker: { set: "confidence", field: "confidence" },
   messageBoundaries: true,
   groupBy: "outcome",
   columns: 2,
@@ -54,12 +54,12 @@ describe("alongTranscript", () => {
   const { table, samples } = fixtureTable([
     full(3, "user"),
     full(2, "grader"),
-    // Without the monitor's layer.
+    // Without the monitor's set.
     { ...full(4, "grader"), log10: undefined },
     full(1, "grader"),
   ]);
 
-  it("has a panel per sample with every chosen layer, grouped by score, then by epoch", () => {
+  it("has a panel per sample with every chosen set, grouped by score, then by epoch", () => {
     const view = alongTranscript(table, samples, params());
     expect(
       view.groups.map((group) => ({
@@ -73,7 +73,7 @@ describe("alongTranscript", () => {
     expect(view.omitted).toBe(1);
   });
 
-  it("keeps samples without a layer nothing asks for", () => {
+  it("keeps samples without a set nothing asks for", () => {
     const view = alongTranscript(
       table,
       samples,
@@ -112,7 +112,7 @@ describe("alongTranscript", () => {
     ]);
   });
 
-  it("puts the x layer's spans at 1, 2, ... with each series' value on them", () => {
+  it("puts the x set's spans at 1, 2, ... with each series' value on them", () => {
     const [panel] = panels(alongTranscript(table, samples, params()));
     expect(panel?.spanCount).toBe(3);
     expect(
@@ -128,9 +128,9 @@ describe("alongTranscript", () => {
     ]);
   });
 
-  it("tells where each point's span is, and which layer it is of", () => {
+  it("tells where each point's span is, and which set it is of", () => {
     const [panel] = panels(alongTranscript(table, samples, params()));
-    expect(panel?.layerId).toBe(layerId("p_eval", "P(eval)"));
+    expect(panel?.setId).toBe(setId("p_eval", "P(eval)"));
     expect(panel?.points.map((point) => point.position)).toEqual([
       { messageId: "a1", contentIndex: null, start: 0, end: 9 },
       { messageId: "a1", contentIndex: null, start: 11, end: 20 },
@@ -143,7 +143,7 @@ describe("alongTranscript", () => {
     ["max", [3, 4, 20]],
     ["count", [2, 2, 2]],
   ] as const)(
-    "rolls a finer layer's field up onto the x spans by its %s",
+    "rolls a finer set's field up onto the x spans by its %s",
     (aggregation, expected) => {
       const view = alongTranscript(
         table,
@@ -158,7 +158,24 @@ describe("alongTranscript", () => {
     }
   );
 
-  it("joins a layer with the x layer's spans without rolling it up", () => {
+  it("calls the x spans spans when the x set has no unit", () => {
+    const unitless = fixtureTable([
+      { ...full(1, "grader"), paragraphUnit: null },
+    ]);
+    expect(unitless.table.sets.find((s) => s.name === "P(eval)")?.unit).toBe(
+      null
+    );
+    const view = alongTranscript(
+      unitless.table,
+      unitless.samples,
+      params({ series: [series("probes", "deception")] })
+    );
+    expect(view.spanNoun).toBe("span");
+    expect(panels(view)[0]?.title).toBe("epoch 1: grader, 3 spans");
+    expect(view.series[0]?.label).toBe("probes · deception (mean per span)");
+  });
+
+  it("joins a set with the x set's spans without rolling it up", () => {
     const view = alongTranscript(
       table,
       samples,
@@ -269,7 +286,7 @@ describe("alongTranscript", () => {
     expect(single.rightAxis).toBeNull();
   });
 
-  it("has no panels when no sample has the x layer", () => {
+  it("has no panels when no sample has the x set", () => {
     const view = alongTranscript(
       table,
       samples,
@@ -281,7 +298,7 @@ describe("alongTranscript", () => {
 });
 
 describe("defaultParams", () => {
-  it("starts from the first numeric layer, aligned markers and the one sample score", () => {
+  it("starts from the first numeric set, aligned markers and the one sample score", () => {
     const { table, samples } = fixtureTable([
       { epoch: 1, outcome: "user", confidence: ["none", "none", "likely"] },
       full(2, "grader"),
@@ -289,14 +306,14 @@ describe("defaultParams", () => {
     expect(defaultParams(table, samples)).toEqual({
       x: "P(eval)",
       series: [series("P(eval)", "p_eval")],
-      marker: { layer: "confidence", field: "confidence" },
+      marker: { set: "confidence", field: "confidence" },
       messageBoundaries: true,
       groupBy: "outcome",
       columns: 2,
     });
   });
 
-  it("doesn't mark with a layer of other spans", () => {
+  it("doesn't mark with a set of other spans", () => {
     const { table, samples } = fixtureTable([
       { epoch: 1, pEval: [1, 2, 3], probes: [1, 2, 3, 4, 5, 6] },
     ]);
@@ -324,8 +341,8 @@ describe("resolveParams", () => {
     const resolved = resolveParams(
       {
         x: "gone",
-        series: [{ layer: "P(eval)", field: "nope", aggregation: "mean" }],
-        marker: { layer: "monitor", field: "log10_p" },
+        series: [{ set: "P(eval)", field: "nope", aggregation: "mean" }],
+        marker: { set: "monitor", field: "log10_p" },
         messageBoundaries: "yes",
         groupBy: "p_eval",
         columns: 9,

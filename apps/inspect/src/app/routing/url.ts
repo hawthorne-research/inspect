@@ -363,11 +363,11 @@ export const sampleMessageUrl = (
 };
 
 /** An annotated span to show in the Messages tab: where it is, and the
- *  layer (a `layerId`) to show it in when the layer on screen has no span
- *  there. */
+ *  annotation set (a `setId`) to show it in when the set on screen has no
+ *  span there. */
 export interface SpanTarget {
   position: SpanPosition;
-  layer: string | null;
+  set: string | null;
 }
 
 /**
@@ -388,7 +388,7 @@ export const sampleSpanUrl = (
     message: target.position.messageId,
     span: formatSpanOffsets(target.position),
   });
-  if (target.layer !== null) params.set("layer", target.layer);
+  if (target.set !== null) params.set("set", target.set);
   return `${baseUrl}?${params.toString()}`;
 };
 
@@ -400,7 +400,7 @@ export const spanTargetParam = (
   const span = searchParams.get("span");
   const position =
     message && span ? parseSpanOffsets(message, span) : undefined;
-  return position ? { position, layer: searchParams.get("layer") } : null;
+  return position ? { position, set: searchParams.get("set") } : null;
 };
 
 /**

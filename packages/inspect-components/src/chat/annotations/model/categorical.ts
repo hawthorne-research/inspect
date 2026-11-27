@@ -1,5 +1,4 @@
 import type { CategoricalField } from "./format";
-import type { ResolvedLayer } from "./layers";
 import {
   paletteColors,
   textOn,
@@ -7,6 +6,7 @@ import {
   type Palette,
   type SpanStyle,
 } from "./schemes";
+import type { ResolvedSet } from "./sets";
 
 /** Opacity of spans the legend's highlight leaves out. */
 const kDimmedOpacity = 0.3;
@@ -97,14 +97,14 @@ export const optionStyle = (
   return style;
 };
 
-/** How many spans of `layer` carry each option of `field` (options in
+/** How many spans of `set` carry each option of `field` (options in
  *  field order, including zero counts). */
 export const countOptions = (
-  layer: ResolvedLayer,
+  set: ResolvedSet,
   field: CategoricalField
 ): Array<{ option: string; count: number }> => {
   const counts = new Map(field.options.map((option) => [option, 0]));
-  for (const part of layer.parts) {
+  for (const part of set.parts) {
     for (const label of part.labels.get(field.name) ?? []) {
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }

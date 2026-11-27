@@ -15,16 +15,16 @@ import type {
 
 import {
   codePointOffsets,
-  collectAnnotationLayers,
+  collectAnnotationSets,
   spanText,
   type ResolvedPart,
-} from "./layers";
+} from "./sets";
 import {
   annotatedScore,
   kindField,
-  rawLayer,
   rawPart,
-  resolvedLayer,
+  rawSet,
+  resolvedSet,
 } from "./testFixtures";
 
 const reasoning = (text: string): ContentReasoning => ({
@@ -53,8 +53,8 @@ const kMessages: ChatMessage[] = [
 
 const kParagraphs = "First I map the maze.\n\nThen I solve it.";
 
-const labelLayer = (overrides: Record<string, unknown> = {}) =>
-  rawLayer({
+const labelSet = (overrides: Record<string, unknown> = {}) =>
+  rawSet({
     name: "paragraph labels",
     unit: "paragraph",
     fields: [kindField],
@@ -77,59 +77,58 @@ const kParagraphMessages: ChatMessage[] = [
 const spans = (part: ResolvedPart | undefined): string[] =>
   part ? part.starts.map((_, i) => spanText(part, i)) : [];
 
-const errorOf = (layer: unknown, messages: ChatMessage[] = kMessages) =>
-  collectAnnotationLayers({ probes: annotatedScore([layer]) }, messages)
-    .errors[0];
+const errorOf = (set: unknown, messages: ChatMessage[] = kMessages) =>
+  collectAnnotationSets({ probes: annotatedScore([set]) }, messages).errors[0];
 
-describe("collectAnnotationLayers", () => {
-  it("collects layers from every score, in score order", () => {
-    const { layers, errors } = collectAnnotationLayers(
+describe("collectAnnotationSets", () => {
+  it("collects sets from every score, in score order", () => {
+    const { sets, errors } = collectAnnotationSets(
       {
         accuracy: testScore({ value: 1 }),
-        paragraphs: annotatedScore([labelLayer()]),
+        paragraphs: annotatedScore([labelSet()]),
         tokens: annotatedScore([
-          rawLayer(),
-          rawLayer({ name: "more probes", parts: [] }),
+          rawSet(),
+          rawSet({ name: "more probes", parts: [] }),
         ]),
       },
       [...kMessages, ...kParagraphMessages]
     );
     expect(errors).toEqual([]);
-    expect(layers.map((l) => [l.score, l.name])).toEqual([
+    expect(sets.map((s) => [s.score, s.name])).toEqual([
       ["paragraphs", "paragraph labels"],
       ["tokens", "probes"],
       ["tokens", "more probes"],
     ]);
-    expect(new Set(layers.map((l) => l.id)).size).toBe(3);
+    expect(new Set(sets.map((s) => s.id)).size).toBe(3);
   });
 
-  it("keeps the valid layers when another layer or score is invalid", () => {
-    const { layers, errors } = collectAnnotationLayers(
+  it("keeps the valid sets when another set or score is invalid", () => {
+    const { sets, errors } = collectAnnotationSets(
       {
         broken: testScore({ metadata: { text_annotations: { version: 9 } } }),
         mixed: annotatedScore([
-          rawLayer({ name: "bad", parts: [rawPart({ message_id: "gone" })] }),
-          rawLayer({ name: "good" }),
+          rawSet({ name: "bad", parts: [rawPart({ message_id: "gone" })] }),
+          rawSet({ name: "good" }),
         ]),
       },
       kMessages
     );
-    expect(layers.map((l) => l.name)).toEqual(["good"]);
+    expect(sets.map((s) => s.name)).toEqual(["good"]);
     expect(errors).toHaveLength(2);
     expect(errors.join("\n")).toMatch(/version 9/);
     expect(errors.join("\n")).toMatch(/gone not found/);
   });
 
   it("finds nothing without annotations", () => {
-    expect(collectAnnotationLayers({ a: testScore() }, kMessages)).toEqual({
-      layers: [],
+    expect(collectAnnotationSets({ a: testScore() }, kMessages)).toEqual({
+      sets: [],
       errors: [],
     });
-    expect(collectAnnotationLayers(null, kMessages).layers).toEqual([]);
+    expect(collectAnnotationSets(null, kMessages).sets).toEqual([]);
   });
 
   it("ignores the old span_labels and token_values keys", () => {
-    const { layers } = collectAnnotationLayers(
+    const { sets } = collectAnnotationSets(
       {
         old: testScore({
           metadata: { span_labels: { version: 0 }, token_values: {} },
@@ -137,14 +136,14 @@ describe("collectAnnotationLayers", () => {
       },
       kMessages
     );
-    expect(layers).toEqual([]);
+    expect(sets).toEqual([]);
   });
 });
 
-describe("resolving a layer", () => {
+describe("resolving a set", () => {
   it("orders parts by transcript with each kind of text", () => {
-    const layer = resolvedLayer(
-      rawLayer({
+    const set = resolvedSet(
+      rawSet({
         parts: [
           rawPart({
             message_id: "t1",
@@ -171,26 +170,26 @@ describe("resolving a layer", () => {
       }),
       kMessages
     );
-    expect(
-      layer.parts.map((p) => [p.messageId, p.contentIndex, p.kind])
-    ).toEqual([
-      ["u1", null, "text"],
-      ["a1", 0, "reasoning"],
-      ["a1", 1, "text"],
-      ["t1", null, "text"],
-    ]);
-    expect(layer.parts.map((p) => p.index)).toEqual([0, 1, 2, 3]);
-    expect(spans(layer.parts[0])).toEqual(["Solve", "the", "maze."]);
-    expect(spans(layer.parts[1])).toEqual(["Map", "it "]);
-    expect(layer.spanCount).toBe(8);
+    expect(set.parts.map((p) => [p.messageId, p.contentIndex, p.kind])).toEqual(
+      [
+        ["u1", null, "text"],
+        ["a1", 0, "reasoning"],
+        ["a1", 1, "text"],
+        ["t1", null, "text"],
+      ]
+    );
+    expect(set.parts.map((p) => p.index)).toEqual([0, 1, 2, 3]);
+    expect(spans(set.parts[0])).toEqual(["Solve", "the", "maze."]);
+    expect(spans(set.parts[1])).toEqual(["Map", "it "]);
+    expect(set.spanCount).toBe(8);
   });
 
   it("keeps spans after emoji on their characters", () => {
     // Each emoji is one code point but two UTF-16 units: slicing with the
     // raw offsets would shift every later span.
     const messages = [testUserMessage({ id: "u1", content: "🧭 Go 👋🏽 north" })];
-    const layer = resolvedLayer(
-      rawLayer({
+    const set = resolvedSet(
+      rawSet({
         parts: [
           rawPart({
             starts: [0, 2, 5, 8],
@@ -201,12 +200,12 @@ describe("resolving a layer", () => {
       }),
       messages
     );
-    expect(spans(layer.parts[0])).toEqual(["🧭", "Go", "👋🏽", "north"]);
+    expect(spans(set.parts[0])).toEqual(["🧭", "Go", "👋🏽", "north"]);
   });
 
   it("rejects a part whose message is missing", () => {
     expect(
-      errorOf(rawLayer({ parts: [rawPart({ message_id: "gone" })] }))
+      errorOf(rawSet({ parts: [rawPart({ message_id: "gone" })] }))
     ).toMatch(/gone not found/);
   });
 
@@ -218,21 +217,21 @@ describe("resolving a layer", () => {
     ],
     ["a content index past the parts", { message_id: "a1", content_index: 5 }],
   ])("rejects %s", (_name, overrides) => {
-    expect(errorOf(rawLayer({ parts: [rawPart(overrides)] }))).toMatch(
+    expect(errorOf(rawSet({ parts: [rawPart(overrides)] }))).toMatch(
       /not a text or reasoning part/
     );
   });
 
   it("rejects a span past the end of the text, counted in code points", () => {
     const messages = [testUserMessage({ id: "u1", content: "🙂🙂" })];
-    const layer = (end: number) =>
-      rawLayer({
+    const set = (end: number) =>
+      rawSet({
         parts: [
           rawPart({ starts: [0], ends: [end], values: { deception: [1] } }),
         ],
       });
-    expect(errorOf(layer(2), messages)).toBeUndefined();
-    expect(errorOf(layer(3), messages)).toMatch(/past the text/);
+    expect(errorOf(set(2), messages)).toBeUndefined();
+    expect(errorOf(set(3), messages)).toMatch(/past the text/);
   });
 });
 

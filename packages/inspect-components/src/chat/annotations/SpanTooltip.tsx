@@ -15,8 +15,8 @@ import {
   type AnnotationField,
   type AnnotationView,
   type Palette,
-  type ResolvedLayer,
   type ResolvedPart,
+  type ResolvedSet,
   type SpanStyle,
 } from "./model";
 import styles from "./SpanTooltip.module.css";
@@ -30,15 +30,16 @@ const kMaxColumns = 3;
 
 /**
  * The one tooltip for every annotated span in the Messages tab: the span's
- * text, then the span's value of each field of the layer, each with a bar
- * (an option's probability, or a value against the field's colour scale).
+ * text, then the span's value of each field of the annotation set, each
+ * with a bar (an option's probability, or a value against the field's
+ * colour scale).
  * Listens for hover on the document rather than on each of the sample's
  * spans, and hides on scroll, which would leave it behind.
  */
 export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
   const [hover, setHover] = useState<HoveredSpan | null>(null);
   useEventListener(document, "mouseover", (e) => {
-    setHover(hoveredSpan(e, view.layer));
+    setHover(hoveredSpan(e, view.set));
   });
   // No mouseover follows when the pointer leaves the window.
   useEventListener(document, "mouseout", (e) => {
@@ -51,7 +52,7 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
   if (!hover) return null;
 
   const { part, span, rect } = hover;
-  const fields = view.layer.fields;
+  const fields = view.set.fields;
   const rows = fields.reduce(
     (sum, field) => sum + 1 + spanValue(field, part, span).probabilities.length,
     0
@@ -82,7 +83,7 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
           <FieldValue
             key={field.name}
             field={field}
-            layer={view.layer}
+            set={view.set}
             palette={view.palette}
             part={part}
             span={span}
@@ -100,16 +101,16 @@ export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
 
 /** One field's value on the span: a numeric field is one row with a bar
  *  from zero; a categorical one is its label, then each option's
- *  probability when the layer has them. `swatch` marks the field that
+ *  probability when the set has them. `swatch` marks the field that
  *  colours the spans (null for the others). */
 const FieldValue: FC<{
   field: AnnotationField;
-  layer: ResolvedLayer;
+  set: ResolvedSet;
   palette: Palette;
   part: ResolvedPart;
   span: number;
   swatch: SpanStyle | undefined | null;
-}> = ({ field, layer, palette, part, span, swatch }) => {
+}> = ({ field, set, palette, part, span, swatch }) => {
   const value = spanValue(field, part, span);
   const active = swatch !== null;
   const name = (
@@ -123,7 +124,7 @@ const FieldValue: FC<{
     const intensity =
       value.number === undefined
         ? 0
-        : valueIntensity(value.number, fieldScale(layer, field));
+        : valueIntensity(value.number, fieldScale(set, field));
     return (
       <div className={clsx(styles.row, active && styles.active)}>
         {name}

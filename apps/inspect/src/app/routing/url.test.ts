@@ -361,10 +361,10 @@ describe("span links", () => {
   ) => logSamplesUrl(logPath, sampleId, sampleEpoch, tab);
   const searchOf = (url: string) => new URLSearchParams(url.split("?")[1]);
 
-  test("link to the Messages tab with the span's message, offsets and layer", () => {
+  test("link to the Messages tab with the span's message, offsets and set", () => {
     const target: SpanTarget = {
       position: { messageId: "m/1 x", contentIndex: 2, start: 10, end: 42 },
-      layer: JSON.stringify(["p_eval", "P(eval) & more"]),
+      set: JSON.stringify(["p_eval", "P(eval) & more"]),
     };
     const url = sampleSpanUrl(builder, target, "dir/log.eval", "a b", 3);
     expect(url.split("?")[0]).toBe(
@@ -374,14 +374,14 @@ describe("span links", () => {
     expect(spanTargetParam(searchOf(url))).toEqual(target);
   });
 
-  test("leave out a content index or layer the target lacks", () => {
+  test("leave out a content index or set the target lacks", () => {
     const target: SpanTarget = {
       position: { messageId: "m1", contentIndex: null, start: 0, end: 5 },
-      layer: null,
+      set: null,
     };
     const url = sampleSpanUrl(builder, target, "log.eval", 1, 1);
     expect(searchOf(url).get("span")).toBe(":0-5");
-    expect(searchOf(url).has("layer")).toBe(false);
+    expect(searchOf(url).has("set")).toBe(false);
     expect(spanTargetParam(searchOf(url))).toEqual(target);
   });
 

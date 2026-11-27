@@ -1,11 +1,11 @@
 import { summaryOption } from "./categorical";
-import { spanText, type ResolvedPart } from "./layers";
 import { formatValue, peakIndex } from "./numeric";
 import type { SpanStyle } from "./schemes";
+import { spanText, type ResolvedPart } from "./sets";
 import { spanStyle, type AnnotationView } from "./view";
 
-/** Addresses one span of a layer: its part's `index`, and the span's index
- *  within the part. */
+/** Addresses one span of an annotation set: its part's `index`, and the
+ *  span's index within the part. */
 export interface SpanLocation {
   part: number;
   span: number;
@@ -38,9 +38,9 @@ interface SpanRef {
 }
 
 /**
- * The view's layer in transcript order as at most `maxSegments` segments
+ * The view's set in transcript order as at most `maxSegments` segments
  * of equal count (sizes differ by at most one), so one span per segment
- * when the layer has that few. `messageNumbers` maps a message id to the
+ * when the set has that few. `messageNumbers` maps a message id to the
  * number on its chip; a message without one falls back to its 1-based
  * position.
  */
@@ -49,7 +49,7 @@ export const buildStrip = (
   messageNumbers: ReadonlyMap<string, number> = new Map(),
   maxSegments: number = kMaxStripSegments
 ): StripSegment[] => {
-  const spans: SpanRef[] = view.layer.parts.flatMap((part) =>
+  const spans: SpanRef[] = view.set.parts.flatMap((part) =>
     part.starts.map((_, span) => ({ part, span }))
   );
   const count = Math.min(maxSegments, spans.length);

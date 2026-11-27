@@ -10,7 +10,7 @@ import {
 } from "./categorical";
 import type { CategoricalField } from "./format";
 import { colorScheme, textOn, withAlpha, type Palette } from "./schemes";
-import { kindField, rawLayer, rawPart, resolvedLayer } from "./testFixtures";
+import { kindField, rawPart, rawSet, resolvedSet } from "./testFixtures";
 
 const field = (
   options: string[],
@@ -45,8 +45,8 @@ describe("countOptions", () => {
       testAssistantMessage({ id: "a1", content: "One. Two." }),
       testAssistantMessage({ id: "a2", content: "Three." }),
     ];
-    const layer = resolvedLayer(
-      rawLayer({
+    const set = resolvedSet(
+      rawSet({
         fields: [kindField],
         parts: [
           rawPart({
@@ -65,7 +65,7 @@ describe("countOptions", () => {
       }),
       messages
     );
-    expect(countOptions(layer, field(["task_work", "mapping"]))).toEqual([
+    expect(countOptions(set, field(["task_work", "mapping"]))).toEqual([
       { option: "task_work", count: 0 },
       { option: "mapping", count: 3 },
     ]);

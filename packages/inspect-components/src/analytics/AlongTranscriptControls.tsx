@@ -1,17 +1,17 @@
 import { FC, ReactNode } from "react";
 
-import type { Aggregation } from "../chat/annotations/model";
+import { spanNoun, type Aggregation } from "../chat/annotations/model";
 
 import styles from "./AlongTranscript.module.css";
 import {
   kAggregations,
   kMaxColumns,
-  layerFields,
+  setFields,
   type AlongTranscript,
   type AlongTranscriptParams,
   type FieldRef,
-  type LayerInfo,
   type SeriesParams,
+  type SetInfo,
 } from "./model";
 
 interface AlongTranscriptControlsProps {
@@ -19,7 +19,7 @@ interface AlongTranscriptControlsProps {
   /** The view of `params`, which tells which series are rolled up;
    *  undefined when it couldn't be drawn. */
   view: AlongTranscript | undefined;
-  layers: readonly LayerInfo[];
+  sets: readonly SetInfo[];
   /** Scores the panels can be grouped by. */
   scores: readonly string[];
   /** Leaves out the settings that only arrange several samples' panels
@@ -38,20 +38,22 @@ const numberInput = (text: string): number | null | undefined => {
   return Number.isFinite(value) ? value : undefined;
 };
 const refValue = (ref: FieldRef | undefined | null): string =>
-  ref ? JSON.stringify([ref.layer, ref.field]) : kNone;
+  ref ? JSON.stringify([ref.set, ref.field]) : kNone;
 
 /** Selects for the parameters of the "along the transcript" view. */
 export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
   params,
   view,
-  layers,
+  sets,
   scores,
   oneSample = false,
   onChange,
 }) => {
-  const unit = layers.find((layer) => layer.name === params.x)?.unit ?? "span";
-  const numeric = layerFields(layers, "numeric");
-  const categorical = layerFields(layers, "categorical");
+  const noun = spanNoun(
+    sets.find((set) => set.name === params.x)?.unit ?? null
+  );
+  const numeric = setFields(sets, "numeric");
+  const categorical = setFields(sets, "categorical");
   const update = (changes: Partial<AlongTranscriptParams>) =>
     onChange({ ...params, ...changes });
 
@@ -66,7 +68,7 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
     const current = params.series[index];
     const rolledUp =
       view?.series[index]?.rolledUp ??
-      (current !== undefined && current.layer !== params.x);
+      (current !== undefined && current.set !== params.x);
     return (
       <Control label={label}>
         <select
@@ -93,16 +95,16 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
           <option value={kNone}>none</option>
           {numeric.map((ref) => (
             <option key={refValue(ref)} value={refValue(ref)}>
-              {ref.layer} · {ref.field}
+              {ref.set} · {ref.field}
             </option>
           ))}
         </select>
         {current && rolledUp ? (
           <select
-            aria-label={`${label} aggregation per ${unit}`}
+            aria-label={`${label} aggregation per ${noun}`}
             className={styles.select}
             value={current.aggregation}
-            title={`Combines the values within each ${unit}`}
+            title={`Combines the values within each ${noun}`}
             onChange={(e) => {
               const aggregation = kAggregations.find(
                 (a) => a === e.target.value
@@ -170,9 +172,9 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
           value={params.x}
           onChange={(e) => update({ x: e.target.value })}
         >
-          {layers.map((layer) => (
-            <option key={layer.name} value={layer.name}>
-              {layer.name} · {layer.unit}
+          {sets.map((set) => (
+            <option key={set.name} value={set.name}>
+              {set.name} · {spanNoun(set.unit)}
             </option>
           ))}
         </select>
@@ -191,7 +193,7 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
           <option value={kNone}>none</option>
           {categorical.map((ref) => (
             <option key={refValue(ref)} value={refValue(ref)}>
-              {ref.layer} · {ref.field}
+              {ref.set} · {ref.field}
             </option>
           ))}
         </select>

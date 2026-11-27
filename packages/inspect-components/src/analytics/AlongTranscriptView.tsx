@@ -54,13 +54,15 @@ export const AlongTranscriptView: FC<AlongTranscriptViewProps> = ({
       {view.omitted > 0 ? (
         <div className={styles.note}>
           {view.omitted === 1
-            ? "1 sample doesn't have every chosen layer and isn't shown."
-            : `${view.omitted.toLocaleString()} samples don't have every chosen layer and aren't shown.`}
+            ? "1 sample doesn't have every chosen annotation set and isn't shown."
+            : `${view.omitted.toLocaleString()} samples don't have every chosen annotation set and aren't shown.`}
         </div>
       ) : null}
       <div ref={gridRef}>
         {panelCount === 0 ? (
-          <div className={styles.note}>No sample has every chosen layer.</div>
+          <div className={styles.note}>
+            No sample has every chosen annotation set.
+          </div>
         ) : null}
         {view.groups.map((group) => (
           <section

@@ -4,12 +4,12 @@ import { getOwn, isRecord } from "@tsmono/util";
 export const kTextAnnotationsKey = "text_annotations";
 
 /** The one version of the format this module reads. */
-export const kFormatVersion = 1;
+export const kFormatVersion = 2;
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /** JSON values by key, e.g. `{ tokenizer: "tiktoken/o200k_base" }`: how
- *  a layer or field was made, shown as it is. */
+ *  an annotation set or field was made, shown as it is. */
 export type AnnotationMetadata = Readonly<Record<string, unknown>>;
 
 interface FieldBase {
@@ -49,12 +49,14 @@ export interface AnnotationPart {
   probabilities: ReadonlyMap<string, readonly (readonly number[])[]>;
 }
 
-/** One set of fields over spans of transcript text, e.g. a classifier's
- *  paragraph labels or a set of probes' per-token values. */
-export interface AnnotationLayer {
+/** An annotation set: the values of some fields on spans of transcript
+ *  text, e.g. a classifier's paragraph labels or some probes' per-token
+ *  values. */
+export interface AnnotationSet {
   name: string;
-  /** What one span is, for display only, e.g. "paragraph" or "token". */
-  unit: string;
+  /** What one span is, for display only, e.g. "paragraph" or "token"; null
+   *  when the set doesn't say (see `spanNoun`). */
+  unit: string | null;
   /** What produced the values. */
   source: string;
   metadata: AnnotationMetadata;
@@ -65,48 +67,47 @@ export interface AnnotationLayer {
 
 /**
  * Validates a `text_annotations` value. The outer result fails when the
- * value as a whole is unusable; otherwise each layer is validated on its
- * own, so one bad layer leaves the others usable.
+ * value as a whole is unusable; otherwise each annotation set is validated
+ * on its own, so one bad set leaves the others usable.
  */
 export const parseTextAnnotations = (
   raw: unknown
-): Parsed<Parsed<AnnotationLayer>[]> => {
+): Parsed<Parsed<AnnotationSet>[]> => {
   if (!isRecord(raw)) return fail(`${kTextAnnotationsKey} is not an object`);
   if (raw["version"] !== kFormatVersion) {
-    return fail(`unsupported version ${String(raw["version"])}`);
+    return fail(
+      `unsupported version ${String(raw["version"])} (this viewer reads version ${kFormatVersion})`
+    );
   }
-  const rawLayers = raw["layers"];
-  if (!Array.isArray(rawLayers)) return fail("layers is not an array");
+  const rawSets = raw["sets"];
+  if (!Array.isArray(rawSets)) return fail("sets is not an array");
 
   const names = new Set<string>();
-  const layers = rawLayers.map(
-    (rawLayer: unknown, i): Parsed<AnnotationLayer> => {
-      const name = isRecord(rawLayer) ? rawLayer["name"] : undefined;
-      const label =
-        typeof name === "string" ? `layer "${name}"` : `layers[${i}]`;
-      if (typeof name === "string") {
-        if (names.has(name)) return fail(`${label} is defined twice`);
-        names.add(name);
-      }
-      const layer = parseLayer(rawLayer);
-      return layer.ok ? layer : fail(`${label}: ${layer.error}`);
+  const sets = rawSets.map((rawSet: unknown, i): Parsed<AnnotationSet> => {
+    const name = isRecord(rawSet) ? rawSet["name"] : undefined;
+    const label = typeof name === "string" ? `set "${name}"` : `sets[${i}]`;
+    if (typeof name === "string") {
+      if (names.has(name)) return fail(`${label} is defined twice`);
+      names.add(name);
     }
-  );
-  return { ok: true, value: layers };
+    const set = parseSet(rawSet);
+    return set.ok ? set : fail(`${label}: ${set.error}`);
+  });
+  return { ok: true, value: sets };
 };
 
-const parseLayer = (raw: unknown): Parsed<AnnotationLayer> => {
+const parseSet = (raw: unknown): Parsed<AnnotationSet> => {
   if (!isRecord(raw)) return fail("not an object");
   const name = raw["name"];
-  const unit = raw["unit"];
+  const unit = raw["unit"] ?? null;
   const source = raw["source"];
   const metadata = orDefault(raw["metadata"], {});
   const description = raw["description"] ?? null;
   if (typeof name !== "string" || !name) {
     return fail("name is not a non-empty string");
   }
-  if (typeof unit !== "string" || !unit) {
-    return fail("unit is not a non-empty string");
+  if (unit !== null && (typeof unit !== "string" || !unit)) {
+    return fail("unit is not null or a non-empty string");
   }
   if (typeof source !== "string") return fail("source is not a string");
   if (!isRecord(metadata)) return fail("metadata is not an object");

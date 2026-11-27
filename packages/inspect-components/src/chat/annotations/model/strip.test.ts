@@ -9,15 +9,15 @@ import type {
   ContentReasoning,
 } from "@tsmono/inspect-common/types";
 
-import type { ResolvedLayer } from "./layers";
+import type { ResolvedSet } from "./sets";
 import { buildStrip } from "./strip";
 import {
   findingField,
   kindField,
   probeField,
-  rawLayer,
   rawPart,
-  resolvedLayer,
+  rawSet,
+  resolvedSet,
   viewOf,
 } from "./testFixtures";
 import { spanStyle } from "./view";
@@ -62,9 +62,9 @@ const part = (
     },
   });
 
-const layer = (parts: unknown[]): ResolvedLayer =>
-  resolvedLayer(
-    rawLayer({ fields: [kindField, probeField, findingField], parts }),
+const set = (parts: unknown[]): ResolvedSet =>
+  resolvedSet(
+    rawSet({ fields: [kindField, probeField, findingField], parts }),
     kMessages
   );
 
@@ -82,12 +82,12 @@ const kAllSpans = [
 
 describe("buildStrip", () => {
   it("gives one segment per span, in transcript order", () => {
-    const l = layer([
+    const s = set([
       part("a2", 0, [0], [7]),
       part("a1", 1, [0], [6]),
       part("a1", 0, [0, 8], [6, 15]),
     ]);
-    const segments = buildStrip(viewOf(l, "kind"));
+    const segments = buildStrip(viewOf(s, "kind"));
     expect(segments.map((s) => [s.text, s.count])).toEqual([
       ["First.", 1],
       ["Second.", 1],
@@ -97,7 +97,7 @@ describe("buildStrip", () => {
   });
 
   it("marks where each message after the first begins", () => {
-    const segments = buildStrip(viewOf(layer(kAllSpans), "kind"));
+    const segments = buildStrip(viewOf(set(kAllSpans), "kind"));
     expect(segments.map((s) => s.startsMessage)).toEqual([
       false,
       false,
@@ -110,14 +110,14 @@ describe("buildStrip", () => {
   });
 
   it("numbers messages from the chip numbers, else by position", () => {
-    const l = layer([part("a1", 0, [0], [6]), part("a2", 0, [0], [7])]);
-    const segments = buildStrip(viewOf(l, "kind"), new Map([["a1", 5]]));
+    const s = set([part("a1", 0, [0], [6]), part("a2", 0, [0], [7])]);
+    const segments = buildStrip(viewOf(s, "kind"), new Map([["a1", 5]]));
     expect(segments.map((s) => s.messageNumber)).toEqual([5, 3]);
   });
 
   it("cuts more spans than segments into runs of equal count", () => {
     const segments = buildStrip(
-      viewOf(layer(kAllSpans), "deception"),
+      viewOf(set(kAllSpans), "deception"),
       new Map(),
       3
     );
@@ -126,7 +126,7 @@ describe("buildStrip", () => {
 
   it("marks a run in which a message begins", () => {
     const segments = buildStrip(
-      viewOf(layer(kAllSpans), "deception"),
+      viewOf(set(kAllSpans), "deception"),
       new Map(),
       3
     );
@@ -134,21 +134,21 @@ describe("buildStrip", () => {
   });
 
   it("shows a numeric run by its peak", () => {
-    const l = layer(kAllSpans);
-    const view = viewOf(l, "deception");
+    const s = set(kAllSpans);
+    const view = viewOf(s, "deception");
     const [first] = buildStrip(view, new Map(), 3);
     expect(first).toMatchObject({
       location: { part: 0, span: 1 },
       label: "peak -4",
       text: "the",
     });
-    const shown = l.parts[0];
+    const shown = s.parts[0];
     if (!shown) throw new Error();
     expect(first?.style).toEqual(spanStyle(view, shown, 1));
   });
 
   it("shows a categorical run by the first span of its most frequent option", () => {
-    const segments = buildStrip(viewOf(layer(kAllSpans), "kind"), new Map(), 2);
+    const segments = buildStrip(viewOf(set(kAllSpans), "kind"), new Map(), 2);
     expect(segments.map((s) => [s.label, s.text])).toEqual([
       ["mapping (2)", "Map"],
       ["task_work (4)", "First."],
@@ -156,7 +156,7 @@ describe("buildStrip", () => {
   });
 
   it("shows a run by a non-negative option when one is there", () => {
-    const view = viewOf(layer(kAllSpans), "finding");
+    const view = viewOf(set(kAllSpans), "finding");
     const [first, second] = buildStrip(view, new Map(), 2);
     expect(first).toMatchObject({ label: "present (1)", text: "the" });
     expect(first?.style).toBeDefined();
@@ -165,6 +165,6 @@ describe("buildStrip", () => {
   });
 
   it("is empty without spans", () => {
-    expect(buildStrip(viewOf(layer([]), "kind"))).toEqual([]);
+    expect(buildStrip(viewOf(set([]), "kind"))).toEqual([]);
   });
 });

@@ -1,11 +1,11 @@
 import { partKey } from "./format";
-import type { ResolvedLayer } from "./layers";
+import type { ResolvedSet } from "./sets";
 import type { SpanLocation } from "./strip";
 
 /**
- * Where a span is in a sample's messages, whichever layer has it: layers
- * with the same spans (e.g. two classifiers of the same paragraphs) have a
- * span at the same position. `start`/`end` are code-point offsets, as
+ * Where a span is in a sample's messages, whichever annotation set has it:
+ * sets with the same spans (e.g. two classifiers of the same paragraphs)
+ * have a span at the same position. `start`/`end` are code-point offsets, as
  * stored.
  */
 export interface SpanPosition {
@@ -15,12 +15,12 @@ export interface SpanPosition {
   end: number;
 }
 
-/** The span of `layer` at `position`, if the layer has one there. */
+/** The span of `set` at `position`, if the set has one there. */
 export const locateSpan = (
-  layer: ResolvedLayer,
+  set: ResolvedSet,
   position: SpanPosition
 ): SpanLocation | undefined => {
-  const part = layer.partsByKey.get(
+  const part = set.partsByKey.get(
     partKey(position.messageId, position.contentIndex)
   );
   if (!part) return undefined;

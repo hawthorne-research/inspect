@@ -3,9 +3,9 @@
 
 export type {
   AnnotationField,
-  AnnotationLayer,
   AnnotationMetadata,
   AnnotationPart,
+  AnnotationSet,
   CategoricalField,
   NumericField,
   Parsed,
@@ -17,13 +17,13 @@ export {
   partKey,
 } from "./format";
 
-export type { CollectedLayers, ResolvedLayer, ResolvedPart } from "./layers";
+export type { CollectedSets, ResolvedPart, ResolvedSet } from "./sets";
 export {
-  collectAnnotationLayers,
-  layerId,
+  collectAnnotationSets,
+  setId,
   spanText,
   warnAnnotations,
-} from "./layers";
+} from "./sets";
 
 export type { SpanPosition } from "./position";
 export { formatSpanOffsets, locateSpan, parseSpanOffsets } from "./position";
@@ -34,6 +34,7 @@ export {
   metadataEntries,
   metadataText,
   spanCountLabel,
+  spanNoun,
 } from "./describe";
 
 export type { ColorScheme, Palette, SchemeColors, SpanStyle } from "./schemes";
@@ -75,15 +76,15 @@ export type {
   FieldCell,
   FieldColumn,
   FieldOptions,
-  LayerFields,
   ProbabilityColumn,
   SampleSource,
+  SetFields,
   SpanRow,
   SpanRowOptions,
   SpanRows,
 } from "./table";
 export {
-  alignLayers,
+  alignSets,
   fieldColumn,
   probabilityColumn,
   rollUp,

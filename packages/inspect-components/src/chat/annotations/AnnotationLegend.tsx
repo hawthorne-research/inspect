@@ -13,12 +13,13 @@ import {
   optionStyle,
   paletteColors,
   spanCountLabel,
+  spanNoun,
   withAlpha,
   type AnnotationField,
   type AnnotationView,
   type CategoricalField,
   type Palette,
-  type ResolvedLayer,
+  type ResolvedSet,
   type SpanLocation,
   type StripSegment,
 } from "./model";
@@ -33,10 +34,10 @@ const kMaxSegmentedLabel = 20;
 
 interface AnnotationLegendProps {
   view: AnnotationView;
-  /** Every layer of the sample, for the layer picker. */
-  layers: readonly ResolvedLayer[];
+  /** Every annotation set of the sample, for the picker. */
+  sets: readonly ResolvedSet[];
   strip: readonly StripSegment[];
-  onLayerChange: (id: string) => void;
+  onSetChange: (id: string) => void;
   onFieldChange: (name: string) => void;
   onToggleHighlight: (option: string) => void;
   onClearHighlight: () => void;
@@ -46,22 +47,22 @@ interface AnnotationLegendProps {
 }
 
 /**
- * The active layer's summary, layer and field pickers, the field's key
+ * The active annotation set's summary, set and field pickers, the field's key
  * and its overview strip. Also hosts the shared tooltip of annotated
  * spans.
  */
 export const AnnotationLegend: FC<AnnotationLegendProps> = ({
   view,
-  layers,
+  sets,
   strip,
-  onLayerChange,
+  onSetChange,
   onFieldChange,
   onToggleHighlight,
   onClearHighlight,
   onSelectSpan,
   onCycleScheme,
 }) => {
-  const { layer, field } = view;
+  const { set, field } = view;
   return (
     // Find skips the legend: its names would shadow the transcript.
     <section
@@ -70,31 +71,27 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
       data-unsearchable
     >
       <div className={styles.header}>
-        {layers.length > 1 ? (
-          <LayerPicker
-            layers={layers}
-            selected={layer}
-            onChange={onLayerChange}
-          />
+        {sets.length > 1 ? (
+          <SetPicker sets={sets} selected={set} onChange={onSetChange} />
         ) : (
           <span
             className="text-style-label text-style-secondary"
-            title={layer.description ?? undefined}
+            title={set.description ?? undefined}
           >
-            {layer.name}
+            {set.name}
           </span>
         )}
         <span className={styles.source}>
           {[
-            layer.source,
-            ...metadataEntries(layer.metadata),
-            spanCountLabel(layer.spanCount, layer.unit),
+            set.source,
+            ...metadataEntries(set.metadata),
+            spanCountLabel(set.spanCount, set.unit),
           ]
             .filter((s) => s !== "")
             .join(" · ")}
         </span>
         <FieldPicker
-          fields={layer.fields}
+          fields={set.fields}
           selected={field}
           onChange={onFieldChange}
         />
@@ -102,7 +99,7 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
       </div>
       {field.type === "categorical" ? (
         <OptionKey
-          layer={layer}
+          set={set}
           field={field}
           highlighted={view.highlighted}
           palette={view.palette}
@@ -112,51 +109,40 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
       ) : (
         <ColorBar scale={view.scale} palette={view.palette} />
       )}
-      <OverviewStrip
-        segments={strip}
-        unit={layer.unit}
-        onSelect={onSelectSpan}
-      />
+      <OverviewStrip segments={strip} unit={set.unit} onSelect={onSelectSpan} />
       <SpanTooltip view={view} />
     </section>
   );
 };
 
-const LayerPicker: FC<{
-  layers: readonly ResolvedLayer[];
-  selected: ResolvedLayer;
+const SetPicker: FC<{
+  sets: readonly ResolvedSet[];
+  selected: ResolvedSet;
   onChange: (id: string) => void;
-}> = ({ layers, selected, onChange }) => (
+}> = ({ sets, selected, onChange }) => (
   <select
-    aria-label="Annotation layer"
-    className={clsx(styles.select, styles.layerSelect)}
+    aria-label="Annotation set"
+    className={clsx(styles.select, styles.setSelect)}
     value={selected.id}
     title={selected.description ?? undefined}
     onChange={(e) => onChange(e.target.value)}
   >
-    {layers.map((layer) => (
-      <option
-        key={layer.id}
-        value={layer.id}
-        title={layer.description ?? undefined}
-      >
-        {layerLabel(layer, layers)}
+    {sets.map((set) => (
+      <option key={set.id} value={set.id} title={set.description ?? undefined}>
+        {setLabel(set, sets)}
       </option>
     ))}
   </select>
 );
 
-/** A layer's name and unit, with its score when another score has a layer
- *  of the same name. */
-const layerLabel = (
-  layer: ResolvedLayer,
-  layers: readonly ResolvedLayer[]
-): string => {
-  const label = `${layer.name} · ${layer.unit}`;
-  const ambiguous = layers.some(
-    (other) => other !== layer && other.name === layer.name
+/** An annotation set's name and `spanNoun`, with its score when another
+ *  score has a set of the same name. */
+const setLabel = (set: ResolvedSet, sets: readonly ResolvedSet[]): string => {
+  const label = `${set.name} · ${spanNoun(set.unit)}`;
+  const ambiguous = sets.some(
+    (other) => other !== set && other.name === set.name
   );
-  return ambiguous ? `${label} (${layer.score})` : label;
+  return ambiguous ? `${label} (${set.score})` : label;
 };
 
 const FieldPicker: FC<{
@@ -197,15 +183,15 @@ const detailedTitle = (field: AnnotationField): string | undefined =>
 /** Each option's tint (none for a negative option) and count; clicking
  *  options highlights their spans. */
 const OptionKey: FC<{
-  layer: ResolvedLayer;
+  set: ResolvedSet;
   field: CategoricalField;
   highlighted: readonly string[];
   palette: Palette;
   onToggle: (option: string) => void;
   onClear: () => void;
-}> = ({ layer, field, highlighted, palette, onToggle, onClear }) => (
+}> = ({ set, field, highlighted, palette, onToggle, onClear }) => (
   <div className={styles.options} role="group" aria-label="Options">
-    {countOptions(layer, field).map(({ option, count }) => {
+    {countOptions(set, field).map(({ option, count }) => {
       const active = highlighted.includes(option);
       return (
         <button

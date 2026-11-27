@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { alignedLayers } from "./spanTable";
+import { alignedSets } from "./spanTable";
 import { fixtureTable } from "./testFixtures";
 
 describe("sampleSpanTable and mergeSpanTables", () => {
-  it("describe every sample's layers, in the order first seen", () => {
+  it("describe every sample's sets, in the order first seen", () => {
     const { table } = fixtureTable([
       { epoch: 1, confidence: ["likely", "none", "none"] },
       { epoch: 2, pEval: [0.1, 0.2, 0.3], probes: [1, 2, 3, 4, 5, 6] },
     ]);
-    expect(table.layers).toEqual([
+    expect(table.sets).toEqual([
       {
         name: "confidence",
         unit: "paragraph",
@@ -44,8 +44,8 @@ describe("sampleSpanTable and mergeSpanTables", () => {
   });
 });
 
-describe("alignedLayers", () => {
-  it("has the layers with the x layer's spans in every sample with both", () => {
+describe("alignedSets", () => {
+  it("has the sets with the x set's spans in every sample with both", () => {
     const { table } = fixtureTable([
       { epoch: 1, pEval: [0.1, 0.2, 0.3], log10: [-1, -2, -3] },
       {
@@ -55,15 +55,15 @@ describe("alignedLayers", () => {
         probes: [1, 2, 3, 4, 5, 6],
       },
     ]);
-    expect([...alignedLayers(table.rows, "P(eval)")].sort()).toEqual([
+    expect([...alignedSets(table.rows, "P(eval)")].sort()).toEqual([
       "P(eval)",
       "confidence",
       "monitor",
     ]);
-    expect([...alignedLayers(table.rows, "probes")]).toEqual(["probes"]);
+    expect([...alignedSets(table.rows, "probes")]).toEqual(["probes"]);
   });
 
-  it("leaves out a layer that covers only some of the x layer's spans", () => {
+  it("leaves out a set that covers only some of the x set's spans", () => {
     const { table } = fixtureTable([
       {
         epoch: 1,
@@ -72,8 +72,8 @@ describe("alignedLayers", () => {
       },
     ]);
     const partial = table.rows.filter(
-      (row) => row.layer !== "confidence" || row.message_id === "a1"
+      (row) => row.annotation_set !== "confidence" || row.message_id === "a1"
     );
-    expect([...alignedLayers(partial, "P(eval)")]).toEqual(["P(eval)"]);
+    expect([...alignedSets(partial, "P(eval)")]).toEqual(["P(eval)"]);
   });
 });

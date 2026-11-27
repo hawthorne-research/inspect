@@ -6,8 +6,8 @@ import {
   kTextAnnotationsKey,
   parseTextAnnotations,
   partKey,
-  type AnnotationLayer,
   type AnnotationPart,
+  type AnnotationSet,
   type Parsed,
 } from "./format";
 
@@ -17,7 +17,7 @@ export interface ResolvedPart extends Pick<
   AnnotationPart,
   "labels" | "values" | "probabilities"
 > {
-  /** Position in the layer's transcript order; identifies it in the DOM. */
+  /** Position in the set's transcript order; identifies it in the DOM. */
   index: number;
   messageId: string;
   /** Position of the message in the sample's messages. */
@@ -33,9 +33,10 @@ export interface ResolvedPart extends Pick<
   codePointEnds: readonly number[];
 }
 
-/** A layer whose parts all resolved against the sample's messages. */
-export interface ResolvedLayer extends Omit<AnnotationLayer, "parts"> {
-  /** Unique within the sample: the score's name and the layer's. */
+/** An annotation set whose parts all resolved against the sample's
+ *  messages. */
+export interface ResolvedSet extends Omit<AnnotationSet, "parts"> {
+  /** Unique within the sample: the score's name and the set's. */
   id: string;
   score: string;
   /** In transcript order: message order, then content index. */
@@ -45,22 +46,22 @@ export interface ResolvedLayer extends Omit<AnnotationLayer, "parts"> {
   partsByKey: ReadonlyMap<string, ResolvedPart>;
 }
 
-export interface CollectedLayers {
-  layers: ResolvedLayer[];
-  /** One message per score or layer left out as invalid. */
+export interface CollectedSets {
+  sets: ResolvedSet[];
+  /** One message per score or set left out as invalid. */
   errors: string[];
 }
 
 /**
- * Every valid annotation layer of the sample's scores, in score order, each
- * checked against `messages`. A score or layer that fails validation is
+ * Every valid annotation set of the sample's scores, in score order, each
+ * checked against `messages`. A score or set that fails validation is
  * left out with an error; the others still resolve.
  */
-export const collectAnnotationLayers = (
+export const collectAnnotationSets = (
   scores: Record<string, Score> | null | undefined,
   messages: readonly ChatMessage[]
-): CollectedLayers => {
-  const layers: ResolvedLayer[] = [];
+): CollectedSets => {
+  const sets: ResolvedSet[] = [];
   const errors: string[] = [];
   for (const [score, value] of Object.entries(scores ?? {})) {
     const metadata: unknown = value.metadata;
@@ -72,24 +73,22 @@ export const collectAnnotationLayers = (
       errors.push(`score "${score}": ${parsed.error}`);
       continue;
     }
-    for (const layer of parsed.value) {
-      const resolved = layer.ok
-        ? resolveLayer(score, layer.value, messages)
-        : layer;
+    for (const set of parsed.value) {
+      const resolved = set.ok ? resolveSet(score, set.value, messages) : set;
       if (resolved.ok) {
-        layers.push(resolved.value);
+        sets.push(resolved.value);
       } else {
         errors.push(`score "${score}": ${resolved.error}`);
       }
     }
   }
-  return { layers, errors };
+  return { sets, errors };
 };
 
-/** A layer's `ResolvedLayer.id`: unique within a sample. JSON keeps the
- *  pair unambiguous whatever characters the names hold. */
-export const layerId = (score: string, layer: string): string =>
-  JSON.stringify([score, layer]);
+/** An annotation set's `ResolvedSet.id`: unique within a sample. JSON
+ *  keeps the pair unambiguous whatever characters the names hold. */
+export const setId = (score: string, set: string): string =>
+  JSON.stringify([score, set]);
 
 const warned = new Set<string>();
 
@@ -101,14 +100,14 @@ export const warnAnnotations = (error: string): void => {
   console.warn(`Text annotations not shown: ${error}`);
 };
 
-/** Checks every part of `layer` against `messages` (the message exists and
+/** Checks every part of `set` against `messages` (the message exists and
  *  the addressed content has text that the offsets fit) and converts its
  *  offsets to UTF-16 indices. */
-export const resolveLayer = (
+export const resolveSet = (
   score: string,
-  layer: AnnotationLayer,
+  set: AnnotationSet,
   messages: readonly ChatMessage[]
-): Parsed<ResolvedLayer> => {
+): Parsed<ResolvedSet> => {
   const position = new Map<string, number>();
   for (const [index, message] of messages.entries()) {
     if (message.id && !position.has(message.id)) {
@@ -117,10 +116,10 @@ export const resolveLayer = (
   }
 
   const located: Array<{ part: AnnotationPart; position: number }> = [];
-  for (const part of layer.parts) {
+  for (const part of set.parts) {
     const index = position.get(part.messageId);
     if (index === undefined) {
-      return fail(`layer "${layer.name}": message ${part.messageId} not found`);
+      return fail(`set "${set.name}": message ${part.messageId} not found`);
     }
     located.push({ part, position: index });
   }
@@ -138,16 +137,14 @@ export const resolveLayer = (
     const message = messages[messagePosition];
     const target = message ? partText(message, part.contentIndex) : undefined;
     if (!message || !target) {
-      return fail(
-        `layer "${layer.name}": ${key} is not a text or reasoning part`
-      );
+      return fail(`set "${set.name}": ${key} is not a text or reasoning part`);
     }
     const offsets = codePointOffsets(target.text);
     const length = offsets.length - 1;
     const lastEnd = part.ends[part.ends.length - 1] ?? 0;
     if (lastEnd > length) {
       return fail(
-        `layer "${layer.name}": ${key}: span end ${lastEnd} is past the text's ${length} code points`
+        `set "${set.name}": ${key}: span end ${lastEnd} is past the text's ${length} code points`
       );
     }
     const resolved: ResolvedPart = {
@@ -174,14 +171,14 @@ export const resolveLayer = (
   return {
     ok: true,
     value: {
-      id: layerId(score, layer.name),
+      id: setId(score, set.name),
       score,
-      name: layer.name,
-      unit: layer.unit,
-      source: layer.source,
-      metadata: layer.metadata,
-      description: layer.description,
-      fields: layer.fields,
+      name: set.name,
+      unit: set.unit,
+      source: set.source,
+      metadata: set.metadata,
+      description: set.description,
+      fields: set.fields,
       parts,
       spanCount,
       partsByKey,

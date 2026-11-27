@@ -1,8 +1,8 @@
 import { testScore } from "@tsmono/inspect-common/testing";
 import type { ChatMessage, Score } from "@tsmono/inspect-common/types";
 
-import { collectAnnotationLayers, type ResolvedLayer } from "./layers";
 import { colorScheme, type Palette } from "./schemes";
+import { collectAnnotationSets, type ResolvedSet } from "./sets";
 import { annotationView, type AnnotationView } from "./view";
 
 // Raw `text_annotations` data for this module's tests: the format is JSON
@@ -48,7 +48,7 @@ export const rawPart = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-export const rawLayer = (overrides: Record<string, unknown> = {}) => ({
+export const rawSet = (overrides: Record<string, unknown> = {}) => ({
   name: "probes",
   unit: "token",
   source: "test",
@@ -59,40 +59,40 @@ export const rawLayer = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-export const rawAnnotations = (layers: unknown[] = [rawLayer()]) => ({
-  version: 1,
-  layers,
+export const rawAnnotations = (sets: unknown[] = [rawSet()]) => ({
+  version: 2,
+  sets,
 });
 
-export const annotatedScore = (layers: unknown[]): Score =>
+export const annotatedScore = (sets: unknown[]): Score =>
   testScore({
     value: 0,
-    metadata: { text_annotations: rawAnnotations(layers) },
+    metadata: { text_annotations: rawAnnotations(sets) },
   });
 
-/** The one layer `layers` resolve to against `messages`; throws on any
- *  error so a test fails loudly on bad fixtures. */
-export const resolvedLayer = (
-  layer: unknown,
+/** The one annotation set `set` resolves to against `messages`; throws on
+ *  any error so a test fails loudly on bad fixtures. */
+export const resolvedSet = (
+  set: unknown,
   messages: readonly ChatMessage[]
-): ResolvedLayer => {
-  const { layers, errors } = collectAnnotationLayers(
-    { probes: annotatedScore([layer]) },
+): ResolvedSet => {
+  const { sets, errors } = collectAnnotationSets(
+    { probes: annotatedScore([set]) },
     messages
   );
-  const [resolved] = layers;
+  const [resolved] = sets;
   if (!resolved || errors.length > 0) throw new Error(errors.join("; "));
   return resolved;
 };
 
-/** The view of field `name` of `layer`; throws when it has no such field. */
+/** The view of field `name` of `set`; throws when it has no such field. */
 export const viewOf = (
-  layer: ResolvedLayer,
+  set: ResolvedSet,
   name: string,
   highlight: readonly string[] = [],
   palette: Palette = { scheme: colorScheme("default"), dark: false }
 ): AnnotationView => {
-  const field = layer.fields.find((f) => f.name === name);
+  const field = set.fields.find((f) => f.name === name);
   if (!field) throw new Error(`no field ${name}`);
-  return annotationView(layer, field, highlight, palette);
+  return annotationView(set, field, highlight, palette);
 };

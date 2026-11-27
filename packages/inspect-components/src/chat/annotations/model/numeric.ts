@@ -1,5 +1,4 @@
 import type { NumericField } from "./format";
-import type { ResolvedLayer } from "./layers";
 import {
   paletteColors,
   textOn,
@@ -7,6 +6,7 @@ import {
   type Palette,
   type SpanStyle,
 } from "./schemes";
+import type { ResolvedSet } from "./sets";
 
 /** The quantile of |value| drawn at full colour: a few outliers clip
  *  instead of washing out every other span. */
@@ -14,29 +14,26 @@ const kScaleQuantile = 0.99;
 
 /**
  * The magnitude drawn at full colour for `field`: the 99th percentile of
- * |value| over every span of `layer`, interpolating linearly between order
+ * |value| over every span of `set`, interpolating linearly between order
  * statistics (numpy's default). 0 when there are no spans.
  */
-export const valueScale = (layer: ResolvedLayer, field: NumericField): number =>
-  magnitudeScale(layer.parts.map((part) => part.values.get(field.name) ?? []));
+export const valueScale = (set: ResolvedSet, field: NumericField): number =>
+  magnitudeScale(set.parts.map((part) => part.values.get(field.name) ?? []));
 
-const kScales = new WeakMap<ResolvedLayer, Map<string, number>>();
+const kScales = new WeakMap<ResolvedSet, Map<string, number>>();
 
-/** `valueScale`, computed once per layer and field: the view and the
- *  tooltip ask for it on every render and hover, and a large layer has
+/** `valueScale`, computed once per set and field: the view and the
+ *  tooltip ask for it on every render and hover, and a large set has
  *  tens of thousands of values to sort. */
-export const fieldScale = (
-  layer: ResolvedLayer,
-  field: NumericField
-): number => {
-  let scales = kScales.get(layer);
+export const fieldScale = (set: ResolvedSet, field: NumericField): number => {
+  let scales = kScales.get(set);
   if (!scales) {
     scales = new Map();
-    kScales.set(layer, scales);
+    kScales.set(set, scales);
   }
   let scale = scales.get(field.name);
   if (scale === undefined) {
-    scale = valueScale(layer, field);
+    scale = valueScale(set, field);
     scales.set(field.name, scale);
   }
   return scale;

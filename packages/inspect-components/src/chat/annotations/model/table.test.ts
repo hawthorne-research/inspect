@@ -12,11 +12,11 @@ import type { EvalSample, Score } from "@tsmono/inspect-common/types";
 import demoSample from "./fixtures/demo-sample.json";
 import demoSpans from "./fixtures/demo-spans.json";
 import {
-  alignLayers,
+  alignSets,
   rollUp,
   spanRows,
   type Aggregation,
-  type LayerFields,
+  type SetFields,
   type SpanRow,
   type SpanRowOptions,
 } from "./table";
@@ -24,16 +24,16 @@ import {
   annotatedScore,
   kindField,
   probeField,
-  rawLayer,
   rawPart,
+  rawSet,
   suspectsField,
 } from "./testFixtures";
 
 const kSource = { evalId: "eval-1", log: "logs/maze.eval" };
 
 // "Map it." and "Then go." are the reasoning's paragraphs.
-const paragraphLayer = (overrides: Record<string, unknown> = {}) =>
-  rawLayer({
+const paragraphSet = (overrides: Record<string, unknown> = {}) =>
+  rawSet({
     name: "paragraphs",
     unit: "paragraph",
     fields: [kindField, suspectsField],
@@ -58,7 +58,7 @@ const paragraphLayer = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   });
 
-const tokenLayer = rawLayer({
+const tokenSet = rawSet({
   parts: [
     rawPart({
       starts: [0, 2, 5],
@@ -101,8 +101,8 @@ const sampleWith = (
   });
 
 const kSample = sampleWith({
-  labels: annotatedScore([paragraphLayer()]),
-  probes: annotatedScore([tokenLayer]),
+  labels: annotatedScore([paragraphSet()]),
+  probes: annotatedScore([tokenSet]),
 });
 
 const rowsOf = (sample: EvalSample, options: SpanRowOptions = {}) => {
@@ -112,7 +112,7 @@ const rowsOf = (sample: EvalSample, options: SpanRowOptions = {}) => {
 };
 
 describe("spanRows", () => {
-  it("has a row per span with every column, in layer then transcript order", () => {
+  it("has a row per span with every column, in set then transcript order", () => {
     const keys = {
       sample_id: "uuid-1",
       eval_id: "eval-1",
@@ -123,7 +123,7 @@ describe("spanRows", () => {
     const paragraph = {
       ...keys,
       score: "labels",
-      layer: "paragraphs",
+      annotation_set: "paragraphs",
       unit: "paragraph",
       message_id: "a1",
       message_index: 2,
@@ -134,7 +134,7 @@ describe("spanRows", () => {
     const token = {
       ...keys,
       score: "probes",
-      layer: "probes",
+      annotation_set: "probes",
       unit: "token",
       message_id: "u1",
       message_index: 1,
@@ -195,10 +195,10 @@ describe("spanRows", () => {
     ]);
   });
 
-  it("numbers a layer's spans across its parts", () => {
+  it("numbers a set's spans across its parts", () => {
     const sample = sampleWith({
       labels: annotatedScore([
-        paragraphLayer({
+        paragraphSet({
           parts: [
             rawPart({
               message_id: "u1",
@@ -247,7 +247,7 @@ describe("spanRows", () => {
   it("leaves out probability columns of fields without probabilities", () => {
     const sample = sampleWith({
       labels: annotatedScore([
-        paragraphLayer({
+        paragraphSet({
           parts: [
             rawPart({
               message_id: "a1",
@@ -264,15 +264,19 @@ describe("spanRows", () => {
     expect(Object.keys(row ?? {}).filter(isOptionalColumn)).toEqual([]);
   });
 
-  it("includes only the layers asked for, and only their columns", () => {
-    const rows = rowsOf(kSample, { layers: ["probes"] });
-    expect(rows.map((r) => r.layer)).toEqual(["probes", "probes", "probes"]);
+  it("includes only the sets asked for, and only their columns", () => {
+    const rows = rowsOf(kSample, { sets: ["probes"] });
+    expect(rows.map((r) => r.annotation_set)).toEqual([
+      "probes",
+      "probes",
+      "probes",
+    ]);
     expect(Object.keys(rows[0] ?? {}).filter(isFieldColumn)).toEqual([
       "field_deception",
     ]);
   });
 
-  it("gives the options of the layers' categorical fields", () => {
+  it("gives the options of the sets' categorical fields", () => {
     expect(spanRows(kSample, kSource).categoricalFields).toEqual({
       paragraphs: {
         kind: { options: kindField.options, negative: [] },
@@ -281,11 +285,11 @@ describe("spanRows", () => {
     });
   });
 
-  it("returns the errors of invalid layers with the other layers' rows", () => {
+  it("returns the errors of invalid sets with the other sets' rows", () => {
     const { rows, errors } = spanRows(
       sampleWith({
         labels: annotatedScore([
-          paragraphLayer({
+          paragraphSet({
             parts: [
               rawPart({
                 message_id: "gone",
@@ -296,12 +300,16 @@ describe("spanRows", () => {
             ],
           }),
         ]),
-        probes: annotatedScore([tokenLayer]),
+        probes: annotatedScore([tokenSet]),
       }),
       kSource
     );
     expect(errors).toEqual([expect.stringMatching(/gone not found/)]);
-    expect(rows.map((r) => r.layer)).toEqual(["probes", "probes", "probes"]);
+    expect(rows.map((r) => r.annotation_set)).toEqual([
+      "probes",
+      "probes",
+      "probes",
+    ]);
   });
 });
 
@@ -316,7 +324,7 @@ const fieldAndProbabilityColumns = (row: SpanRow | undefined): string[] =>
     .sort();
 
 // The user's message, the two reasoning paragraphs and the text part.
-const coarseLayer = rawLayer({
+const coarseSet = rawSet({
   name: "paragraphs",
   unit: "paragraph",
   fields: [kindField],
@@ -344,10 +352,10 @@ const coarseLayer = rawLayer({
   ],
 });
 
-// Has the reasoning's paragraphs and the gap between them.
-const judgeLayer = rawLayer({
+// Has the reasoning's paragraphs and the gap between them, and no unit.
+const judgeSet = rawSet({
   name: "judge",
-  unit: "paragraph",
+  unit: undefined,
   fields: [
     { name: "confidence", type: "numeric" },
     { name: "verdict", type: "categorical", options: ["ok", "bad"] },
@@ -370,11 +378,11 @@ const judgeLayer = rawLayer({
   ],
 });
 
-describe("alignLayers", () => {
+describe("alignSets", () => {
   const scores = {
-    labels: annotatedScore([coarseLayer]),
-    judges: annotatedScore([judgeLayer]),
-    probes: annotatedScore([tokenLayer]),
+    labels: annotatedScore([coarseSet]),
+    judges: annotatedScore([judgeSet]),
+    probes: annotatedScore([tokenSet]),
   };
   const rows = [
     ...rowsOf(sampleWith(scores, "uuid-1"), { probabilities: true }),
@@ -383,7 +391,7 @@ describe("alignLayers", () => {
   const summary = (r: SpanRow) => ({
     sample_id: r.sample_id,
     score: r.score,
-    layer: r.layer,
+    annotation_set: r.annotation_set,
     unit: r.unit,
     start: r.start,
     end: r.end,
@@ -397,7 +405,7 @@ describe("alignLayers", () => {
     {
       sample_id,
       score: "labels+judges",
-      layer: "paragraphs+judge",
+      annotation_set: "paragraphs+judge",
       unit: "paragraph",
       start: 0,
       end: 7,
@@ -410,7 +418,7 @@ describe("alignLayers", () => {
     {
       sample_id,
       score: "labels+judges",
-      layer: "paragraphs+judge",
+      annotation_set: "paragraphs+judge",
       unit: "paragraph",
       start: 9,
       end: 17,
@@ -422,15 +430,23 @@ describe("alignLayers", () => {
     },
   ];
 
-  it("keeps the spans every layer has, with their fields merged", () => {
-    expect(alignLayers(rows, ["paragraphs", "judge"]).map(summary)).toEqual([
+  it("keeps the spans every set has, with their fields merged", () => {
+    expect(alignSets(rows, ["paragraphs", "judge"]).map(summary)).toEqual([
       ...alignedSpans("uuid-1"),
       ...alignedSpans("uuid-2"),
     ]);
   });
 
-  it("keeps only the aligned layers' field columns", () => {
-    const [row] = alignLayers(rows, ["paragraphs", "judge"]);
+  it("leaves out units that are null, and has none if no set has one", () => {
+    const judge = rows.filter((r) => r.annotation_set === "judge");
+    expect(new Set(judge.map((r) => r.unit))).toEqual(new Set([null]));
+    expect(new Set(alignSets(rows, ["judge"]).map((r) => r.unit))).toEqual(
+      new Set([null])
+    );
+  });
+
+  it("keeps only the aligned sets' field columns", () => {
+    const [row] = alignSets(rows, ["paragraphs", "judge"]);
     expect(fieldAndProbabilityColumns(row)).toEqual([
       "field_confidence",
       "field_kind",
@@ -442,18 +458,18 @@ describe("alignLayers", () => {
 
   it("puts each sample's spans in transcript order, samples as they first appear", () => {
     expect(
-      alignLayers([...rows].reverse(), ["paragraphs", "judge"]).map(summary)
+      alignSets([...rows].reverse(), ["paragraphs", "judge"]).map(summary)
     ).toEqual([...alignedSpans("uuid-2"), ...alignedSpans("uuid-1")]);
   });
 
   it.each<[string, readonly string[], readonly SpanRow[], RegExp]>([
-    ["no layers", [], rows, /No layers/],
-    ["a repeated layer", ["judge", "judge"], rows, /repeated/],
+    ["no sets", [], rows, /No annotation sets/],
+    ["a repeated set", ["judge", "judge"], rows, /repeated/],
     [
-      "a layer without rows",
+      "a set without rows",
       ["paragraphs", "gone"],
       rows,
-      /No spans of layer "gone"/,
+      /No spans of annotation set "gone"/,
     ],
     [
       "a sample twice",
@@ -461,21 +477,21 @@ describe("alignLayers", () => {
       [...rows, ...rows],
       /more than one span/,
     ],
-  ])("rejects %s", (_name, layers, input, error) => {
-    expect(() => alignLayers(input, layers)).toThrow(error);
+  ])("rejects %s", (_name, sets, input, error) => {
+    expect(() => alignSets(input, sets)).toThrow(error);
   });
 
-  it("rejects layers that share a field name", () => {
+  it("rejects sets that share a field name", () => {
     const clashing = rowsOf(
       sampleWith({
-        labels: annotatedScore([coarseLayer]),
+        labels: annotatedScore([coarseSet]),
         other: annotatedScore([
-          rawLayer({ ...coarseLayer, name: "more paragraphs" }),
+          rawSet({ ...coarseSet, name: "more paragraphs" }),
         ]),
       })
     );
     expect(() =>
-      alignLayers(clashing, ["paragraphs", "more paragraphs"])
+      alignSets(clashing, ["paragraphs", "more paragraphs"])
     ).toThrow(/fields "kind"/);
   });
 });
@@ -489,8 +505,8 @@ describe("rollUp", () => {
   };
   // "Map", "it", "." | "Then", "go", "." in the reasoning; "Done", "." in
   // the text part, whose offsets also fall inside "Map it.".
-  const fineLayer = (cue: readonly string[]) =>
-    rawLayer({
+  const fineSet = (cue: readonly string[]) =>
+    rawSet({
       name: "tokens",
       unit: "token",
       fields: [probeField, cueField],
@@ -514,9 +530,9 @@ describe("rollUp", () => {
   const table = (cue: readonly string[]) =>
     spanRows(
       sampleWith({
-        labels: annotatedScore([coarseLayer]),
-        judges: annotatedScore([judgeLayer]),
-        probes: annotatedScore([fineLayer(cue)]),
+        labels: annotatedScore([coarseSet]),
+        judges: annotatedScore([judgeSet]),
+        probes: annotatedScore([fineSet(cue)]),
       }),
       kSource,
       { probabilities: true }
@@ -526,9 +542,11 @@ describe("rollUp", () => {
   const rolled = (agg: Aggregation): SpanRow[] =>
     rollUp(rows, "tokens", "paragraphs", agg, categoricalFields);
 
-  it("keeps the coarse layer's rows and columns, with the fine layer's fields", () => {
+  it("keeps the coarse set's rows and columns, with the fine set's fields", () => {
     const result = rolled("mean");
-    expect(result.map((r) => [r.layer, r.span_index, r.field_kind])).toEqual([
+    expect(
+      result.map((r) => [r.annotation_set, r.span_index, r.field_kind])
+    ).toEqual([
       ["paragraphs", 0, "mapping"],
       ["paragraphs", 1, "mapping"],
       ["paragraphs", 2, "task_work"],
@@ -579,27 +597,27 @@ describe("rollUp", () => {
   });
 
   it("rejects a categorical field without its options", () => {
-    const fields: LayerFields = { tokens: {} };
+    const fields: SetFields = { tokens: {} };
     expect(() => rollUp(rows, "tokens", "paragraphs", "sum", fields)).toThrow(
       /options of field "cue"/
     );
   });
 
-  it("rejects rolling a layer into itself or a missing one", () => {
+  it("rejects rolling a set into itself or a missing one", () => {
     expect(() => rollUp(rows, "paragraphs", "paragraphs", "sum")).toThrow(
       /into itself/
     );
     expect(() =>
       rollUp(rows, "tokens", "gone", "sum", categoricalFields)
-    ).toThrow(/No spans of layer "gone"/);
+    ).toThrow(/No spans of annotation set "gone"/);
   });
 
-  it("rejects layers that share a field name", () => {
+  it("rejects sets that share a field name", () => {
     const clashing = rowsOf(
       sampleWith({
-        labels: annotatedScore([coarseLayer]),
+        labels: annotatedScore([coarseSet]),
         probes: annotatedScore([
-          rawLayer({
+          rawSet({
             name: "tokens",
             fields: [kindField],
             parts: [

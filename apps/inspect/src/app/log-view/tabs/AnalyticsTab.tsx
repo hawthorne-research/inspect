@@ -97,7 +97,7 @@ const LogAnalytics: FC<{
 
   const table = mergeSpanTables(loaded.values.map(({ value }) => value));
   const samples = summaries.map(analyticsSample);
-  if (table.layers.length === 0) {
+  if (table.sets.length === 0) {
     return (
       <div className={styles.tab}>
         <LoadProblems loaded={loaded} />
@@ -130,7 +130,7 @@ const LoadProblems: FC<{ loaded: SampleProjections<SampleSpanTable> }> = ({
   const summary = [
     failed.length > 0 ? `${failed.length} samples failed to load` : null,
     invalid.length > 0
-      ? `${invalid.length} annotation layers were left out as invalid`
+      ? `${invalid.length} annotation sets were left out as invalid`
       : null,
   ]
     .filter((part) => part !== null)

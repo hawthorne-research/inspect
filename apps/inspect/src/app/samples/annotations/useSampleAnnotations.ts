@@ -16,13 +16,13 @@ import {
 import {
   annotationView,
   buildStrip,
-  collectAnnotationLayers,
+  collectAnnotationSets,
   colorScheme,
   locateSpan,
   stepColorScheme,
   warnAnnotations,
   type AnnotationView,
-  type ResolvedLayer,
+  type ResolvedSet,
   type SpanLocation,
   type StripSegment,
 } from "@tsmono/inspect-components/chat/annotations/model";
@@ -44,9 +44,9 @@ export const useAnnotationScheme = () =>
 
 export interface SampleAnnotations {
   view: AnnotationView;
-  layers: readonly ResolvedLayer[];
+  sets: readonly ResolvedSet[];
   strip: readonly StripSegment[];
-  setLayer: (id: string) => void;
+  selectSet: (id: string) => void;
   setField: (name: string) => void;
   toggleHighlight: (option: string) => void;
   clearHighlight: () => void;
@@ -56,7 +56,8 @@ export interface SampleAnnotations {
    * One step of landing a deep link on its span (see `useAttemptUntilDone`):
    * true once it has focused the span, or found it can't be shown; false to
    * be called again, while `rows` lack its message or after switching to
-   * the target's layer because the layer on screen has no span there.
+   * the target's annotation set because the set on screen has no span
+   * there.
    */
   landOnSpan: (target: SpanTarget, rows: readonly MessageRow[]) => boolean;
   /** Moves to the next colour scheme (`step` 1) or the previous (-1). */
@@ -71,19 +72,19 @@ interface AnnotationTargets {
 }
 
 /**
- * Owns the text-annotation concern for a sample: collects the layers its
- * scores carry, validated against its messages (problems are logged and
- * leave the other layers usable), and tracks the layer and field on
+ * Owns the text-annotation concern for a sample: collects the annotation
+ * sets its scores carry, validated against its messages (problems are
+ * logged and leave the other sets usable), and tracks the set and field on
  * screen, the highlighted options, and focusing a span from the strip.
- * Undefined when the sample has no valid layer.
+ * Undefined when the sample has no valid annotation set.
  */
 export function useSampleAnnotations(
   sample: EvalSample | undefined,
   targets: AnnotationTargets
 ): SampleAnnotations | undefined {
   // Kept across samples (and remounts), so moving between samples keeps
-  // the layer and field wherever the next sample has them.
-  const [layerId, setLayer] = useProperty<string>(kSelectionBag, "layer");
+  // the annotation set and field wherever the next sample has them.
+  const [chosenSetId, selectSet] = useProperty<string>(kSelectionBag, "set");
   const [fieldNames, setFieldNames] = useProperty<Record<string, string>>(
     kSelectionBag,
     "fields"
@@ -91,29 +92,28 @@ export function useSampleAnnotations(
   const [schemeId, setSchemeId] = useAnnotationScheme();
   const palette = { scheme: colorScheme(schemeId), dark: useDarkTheme() };
   const [highlight, setHighlight] = useState<{
-    layer: string;
+    set: string;
     field: string;
     options: string[];
-  }>({ layer: "", field: "", options: [] });
+  }>({ set: "", field: "", options: [] });
 
   const collected = sample
-    ? collectAnnotationLayers(sample.scores, sample.messages)
+    ? collectAnnotationSets(sample.scores, sample.messages)
     : undefined;
   for (const error of collected?.errors ?? []) warnAnnotations(error);
-  const layers = collected?.layers ?? [];
+  const sets = collected?.sets ?? [];
   // Derived rather than synced: a stored choice this sample doesn't have
-  // falls back to the first layer and field.
-  const layer = layers.find((l) => l.id === layerId) ?? layers[0];
-  if (!sample || !layer) return undefined;
-  const fieldName = fieldNames?.[layer.id];
-  const field =
-    layer.fields.find((f) => f.name === fieldName) ?? layer.fields[0];
+  // falls back to the first annotation set and field.
+  const set = sets.find((s) => s.id === chosenSetId) ?? sets[0];
+  if (!sample || !set) return undefined;
+  const fieldName = fieldNames?.[set.id];
+  const field = set.fields.find((f) => f.name === fieldName) ?? set.fields[0];
   if (!field) return undefined;
 
   const view = annotationView(
-    layer,
+    set,
     field,
-    highlight.layer === layer.id && highlight.field === field.name
+    highlight.set === set.id && highlight.field === field.name
       ? highlight.options
       : kNoHighlight,
     palette
@@ -128,7 +128,7 @@ export function useSampleAnnotations(
     const list = targets.list.current;
     const scroller = targets.scroller.current;
     const legend = targets.legend.current;
-    const part = layer.parts[location.part];
+    const part = set.parts[location.part];
     if (!list || !scroller || !legend || !part) return;
     const land = (messageId: string) =>
       scrollToSpan({
@@ -162,14 +162,16 @@ export function useSampleAnnotations(
     target: SpanTarget,
     rows: readonly MessageRow[]
   ): boolean => {
-    const location = locateSpan(layer, target.position);
+    const location = locateSpan(set, target.position);
     if (!location) {
-      const other = layers.find((l) => l.id === target.layer);
+      const other = sets.find((s) => s.id === target.set);
       if (other && locateSpan(other, target.position)) {
-        setLayer(other.id);
+        selectSet(other.id);
         return false;
       }
-      warnAnnotations(`no layer has the linked span ${JSON.stringify(target)}`);
+      warnAnnotations(
+        `no annotation set has the linked span ${JSON.stringify(target)}`
+      );
       return true;
     }
     if (!rendered(rows, target.position.messageId) || !targets.list.current) {
@@ -181,19 +183,19 @@ export function useSampleAnnotations(
 
   return {
     view,
-    layers,
+    sets,
     strip,
-    setLayer,
-    setField: (name) => setFieldNames({ ...fieldNames, [layer.id]: name }),
+    selectSet,
+    setField: (name) => setFieldNames({ ...fieldNames, [set.id]: name }),
     toggleHighlight: (option) =>
       setHighlight({
-        layer: layer.id,
+        set: set.id,
         field: field.name,
         options: highlighted.includes(option)
           ? highlighted.filter((o) => o !== option)
           : [...highlighted, option],
       }),
-    clearHighlight: () => setHighlight({ layer: "", field: "", options: [] }),
+    clearHighlight: () => setHighlight({ set: "", field: "", options: [] }),
     focusSpan,
     landOnSpan,
     cycleScheme: (step) =>

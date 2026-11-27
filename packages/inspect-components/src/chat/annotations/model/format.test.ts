@@ -1,33 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import { parseTextAnnotations, type AnnotationLayer } from "./format";
+import { parseTextAnnotations, type AnnotationSet } from "./format";
 import {
   findingField,
   kindField,
   probeField,
   rawAnnotations,
-  rawLayer,
   rawPart,
+  rawSet,
   suspectsField,
 } from "./testFixtures";
 
-const parsedLayer = (raw: unknown): AnnotationLayer => {
+const parsedSet = (raw: unknown): AnnotationSet => {
   const result = parseTextAnnotations(rawAnnotations([raw]));
   if (!result.ok) throw new Error(result.error);
-  const [layer] = result.value;
-  if (!layer?.ok) throw new Error(layer?.error ?? "no layer");
-  return layer.value;
+  const [set] = result.value;
+  if (!set?.ok) throw new Error(set?.error ?? "no set");
+  return set.value;
 };
 
-const layerError = (raw: unknown): string | undefined => {
+const setError = (raw: unknown): string | undefined => {
   const result = parseTextAnnotations(rawAnnotations([raw]));
   if (!result.ok) return result.error;
-  const [layer] = result.value;
-  return layer && !layer.ok ? layer.error : undefined;
+  const [set] = result.value;
+  return set && !set.ok ? set.error : undefined;
 };
 
-const labelLayer = (part: Record<string, unknown> = {}) =>
-  rawLayer({
+const labelSet = (part: Record<string, unknown> = {}) =>
+  rawSet({
     name: "paragraph labels",
     unit: "paragraph",
     metadata: undefined,
@@ -49,9 +49,9 @@ const labelLayer = (part: Record<string, unknown> = {}) =>
   });
 
 describe("parseTextAnnotations", () => {
-  it("accepts a numeric layer", () => {
-    const layer = parsedLayer(rawLayer());
-    expect(layer.fields).toEqual([
+  it("accepts a numeric set", () => {
+    const set = parsedSet(rawSet());
+    expect(set.fields).toEqual([
       {
         type: "numeric",
         name: "deception",
@@ -59,18 +59,18 @@ describe("parseTextAnnotations", () => {
         metadata: { layer: 12, method: "logistic regression" },
       },
     ]);
-    expect(layer.parts[0]?.values.get("deception")).toEqual([0.5, -1, 2]);
+    expect(set.parts[0]?.values.get("deception")).toEqual([0.5, -1, 2]);
   });
 
-  it("accepts a categorical layer with probabilities", () => {
-    const layer = parsedLayer(labelLayer());
-    const [part] = layer.parts;
+  it("accepts a categorical set with probabilities", () => {
+    const set = parsedSet(labelSet());
+    const [part] = set.parts;
     expect(part?.labels.get("kind")).toEqual(["mapping"]);
     expect(part?.probabilities.get("suspects_test")).toEqual([[0.2, 0.8]]);
   });
 
   it("keeps a categorical field's negative options", () => {
-    const [, suspects] = parsedLayer(labelLayer()).fields;
+    const [, suspects] = parsedSet(labelSet()).fields;
     expect(suspects).toEqual({
       type: "categorical",
       name: "suspects_test",
@@ -81,9 +81,9 @@ describe("parseTextAnnotations", () => {
     });
   });
 
-  it("accepts a layer with both a categorical and a numeric field", () => {
-    const layer = parsedLayer(
-      rawLayer({
+  it("accepts a set with both a categorical and a numeric field", () => {
+    const set = parsedSet(
+      rawSet({
         fields: [kindField, probeField],
         parts: [
           rawPart({
@@ -95,16 +95,16 @@ describe("parseTextAnnotations", () => {
         ],
       })
     );
-    const [part] = layer.parts;
+    const [part] = set.parts;
     expect(part?.labels.get("kind")).toHaveLength(3);
     expect(part?.values.get("deception")).toEqual([1, 2, 3]);
   });
 
   it("accepts spans with gaps between them, spans that touch, and no parts", () => {
-    expect(layerError(rawLayer())).toBeUndefined();
+    expect(setError(rawSet())).toBeUndefined();
     expect(
-      layerError(
-        rawLayer({
+      setError(
+        rawSet({
           parts: [
             rawPart({
               starts: [0, 5],
@@ -115,12 +115,18 @@ describe("parseTextAnnotations", () => {
         })
       )
     ).toBeUndefined();
-    expect(layerError(rawLayer({ parts: [] }))).toBeUndefined();
+    expect(setError(rawSet({ parts: [] }))).toBeUndefined();
+  });
+
+  it("reads a missing or null unit as null, and keeps a given one", () => {
+    expect(parsedSet(rawSet({ unit: undefined })).unit).toBeNull();
+    expect(parsedSet(rawSet({ unit: null })).unit).toBeNull();
+    expect(parsedSet(rawSet()).unit).toBe("token");
   });
 
   it("fills a missing description, metadata and negative options", () => {
-    const layer = parsedLayer(
-      rawLayer({
+    const set = parsedSet(
+      rawSet({
         description: undefined,
         fields: [
           { name: "p", type: "numeric" },
@@ -129,8 +135,8 @@ describe("parseTextAnnotations", () => {
         parts: [],
       })
     );
-    expect(layer.description).toBeNull();
-    expect(layer.fields).toEqual([
+    expect(set.description).toBeNull();
+    expect(set.fields).toEqual([
       { type: "numeric", name: "p", description: null, metadata: {} },
       {
         type: "categorical",
@@ -143,22 +149,22 @@ describe("parseTextAnnotations", () => {
     ]);
   });
 
-  it("keeps a layer's and a field's metadata, of any JSON values", () => {
+  it("keeps a set's and a field's metadata, of any JSON values", () => {
     const metadata = {
       tokenizer: "tiktoken/o200k_base",
       threshold: 0.5,
       layers: [16, 24],
       run: { seed: 1, tags: null },
     };
-    const layer = parsedLayer(
-      rawLayer({ metadata, fields: [{ ...probeField, metadata }] })
+    const set = parsedSet(
+      rawSet({ metadata, fields: [{ ...probeField, metadata }] })
     );
-    expect(layer.metadata).toEqual(metadata);
-    expect(layer.fields[0]?.metadata).toEqual(metadata);
+    expect(set.metadata).toEqual(metadata);
+    expect(set.fields[0]?.metadata).toEqual(metadata);
   });
 
   it("reads missing metadata as empty", () => {
-    expect(parsedLayer(labelLayer()).metadata).toEqual({});
+    expect(parsedSet(labelSet()).metadata).toEqual({});
   });
 
   it.each([
@@ -166,16 +172,16 @@ describe("parseTextAnnotations", () => {
     ["a list", ["tiktoken/o200k_base"]],
     ["a string", "tiktoken/o200k_base"],
   ])("rejects metadata that is %s", (_name, metadata) => {
-    expect(layerError(rawLayer({ metadata }))).toBe(
-      'layer "probes": metadata is not an object'
+    expect(setError(rawSet({ metadata }))).toBe(
+      'set "probes": metadata is not an object'
     );
-    expect(
-      layerError(rawLayer({ fields: [{ ...probeField, metadata }] }))
-    ).toBe('layer "probes": fields[0]: metadata is not an object');
+    expect(setError(rawSet({ fields: [{ ...probeField, metadata }] }))).toBe(
+      'set "probes": fields[0]: metadata is not an object'
+    );
   });
 
   const negative = (options: unknown) =>
-    rawLayer({ fields: [{ ...findingField, negative: options }], parts: [] });
+    rawSet({ fields: [{ ...findingField, negative: options }], parts: [] });
 
   it.each([
     ["null", null, "negative is not a list of strings"],
@@ -184,149 +190,145 @@ describe("parseTextAnnotations", () => {
     ["repeated", ["absent", "absent"], "negative has repeats"],
     ["every option", ["absent", "present"], "every option is negative"],
   ])("rejects negative options that are %s", (_name, options, error) => {
-    expect(layerError(negative(options))).toBe(
-      `layer "probes": fields[0]: ${error}`
+    expect(setError(negative(options))).toBe(
+      `set "probes": fields[0]: ${error}`
     );
   });
 
   it.each([
     ["a non-object", "nope"],
     ["version 0", { ...rawAnnotations(), version: 0 }],
-    ["an unknown version", { ...rawAnnotations(), version: 2 }],
-    ["layers that are not a list", { version: 1, layers: {} }],
+    ["version 1", { ...rawAnnotations(), version: 1 }],
+    ["an unknown version", { ...rawAnnotations(), version: 3 }],
+    ["sets that are not a list", { version: 2, sets: {} }],
+    ["layers in place of sets", { version: 2, layers: [rawSet()] }],
   ])("rejects %s as a whole", (_name, raw) => {
     expect(parseTextAnnotations(raw).ok).toBe(false);
+  });
+
+  it("names the version it reads when rejecting another", () => {
+    expect(parseTextAnnotations({ ...rawAnnotations(), version: 1 })).toEqual({
+      ok: false,
+      error: "unsupported version 1 (this viewer reads version 2)",
+    });
   });
 
   const values = (deception: unknown) => rawPart({ values: { deception } });
 
   it.each([
-    ["a non-object layer", "nope"],
-    ["an unnamed layer", rawLayer({ name: "" })],
-    ["a missing unit", rawLayer({ unit: undefined })],
-    ["a non-string source", rawLayer({ source: 3 })],
-    ["no fields", rawLayer({ fields: [] })],
-    ["an unnamed field", rawLayer({ fields: [{ name: "", type: "numeric" }] })],
+    ["a non-object set", "nope"],
+    ["an unnamed set", rawSet({ name: "" })],
+    ["an empty unit", rawSet({ unit: "" })],
+    ["a non-string unit", rawSet({ unit: 3 })],
+    ["a non-string source", rawSet({ source: 3 })],
+    ["no fields", rawSet({ fields: [] })],
+    ["an unnamed field", rawSet({ fields: [{ name: "", type: "numeric" }] })],
     [
       "an unknown field type",
-      rawLayer({ fields: [{ name: "p", type: "text" }] }),
+      rawSet({ fields: [{ name: "p", type: "text" }] }),
     ],
-    ["a duplicate field name", rawLayer({ fields: [probeField, probeField] })],
+    ["a duplicate field name", rawSet({ fields: [probeField, probeField] })],
     [
       "a categorical field with one option",
-      rawLayer({ fields: [{ ...kindField, options: ["a"] }], parts: [] }),
+      rawSet({ fields: [{ ...kindField, options: ["a"] }], parts: [] }),
     ],
     [
       "a categorical field with repeated options",
-      rawLayer({ fields: [{ ...kindField, options: ["a", "a"] }], parts: [] }),
+      rawSet({ fields: [{ ...kindField, options: ["a", "a"] }], parts: [] }),
     ],
     [
       "a part without a message id",
-      rawLayer({ parts: [rawPart({ message_id: "" })] }),
+      rawSet({ parts: [rawPart({ message_id: "" })] }),
     ],
     [
       "a missing content index",
-      rawLayer({ parts: [rawPart({ content_index: undefined })] }),
+      rawSet({ parts: [rawPart({ content_index: undefined })] }),
     ],
     [
       "a negative content index",
-      rawLayer({ parts: [rawPart({ content_index: -1 })] }),
+      rawSet({ parts: [rawPart({ content_index: -1 })] }),
     ],
-    [
-      "unequal starts and ends",
-      rawLayer({ parts: [rawPart({ ends: [5, 9] })] }),
-    ],
-    [
-      "a negative start",
-      rawLayer({ parts: [rawPart({ starts: [-1, 6, 10] })] }),
-    ],
+    ["unequal starts and ends", rawSet({ parts: [rawPart({ ends: [5, 9] })] })],
+    ["a negative start", rawSet({ parts: [rawPart({ starts: [-1, 6, 10] })] })],
     [
       "a fractional offset",
-      rawLayer({ parts: [rawPart({ ends: [5, 9.5, 15] })] }),
+      rawSet({ parts: [rawPart({ ends: [5, 9.5, 15] })] }),
     ],
-    ["an empty span", rawLayer({ parts: [rawPart({ starts: [0, 6, 15] })] })],
-    [
-      "overlapping spans",
-      rawLayer({ parts: [rawPart({ starts: [0, 4, 10] })] }),
-    ],
-    [
-      "a missing field's values",
-      rawLayer({ parts: [rawPart({ values: {} })] }),
-    ],
+    ["an empty span", rawSet({ parts: [rawPart({ starts: [0, 6, 15] })] })],
+    ["overlapping spans", rawSet({ parts: [rawPart({ starts: [0, 4, 10] })] })],
+    ["a missing field's values", rawSet({ parts: [rawPart({ values: {} })] })],
     [
       "values for an unknown field",
-      rawLayer({
+      rawSet({
         parts: [
           rawPart({ values: { deception: [0, 0, 0], other: [0, 0, 0] } }),
         ],
       }),
     ],
-    ["too few values", rawLayer({ parts: [values([1, 2])] })],
-    ["a non-finite value", rawLayer({ parts: [values([1, Number.NaN, 2])] })],
-    ["a non-numeric value", rawLayer({ parts: [values([1, "2", 3])] })],
+    ["too few values", rawSet({ parts: [values([1, 2])] })],
+    ["a non-finite value", rawSet({ parts: [values([1, Number.NaN, 2])] })],
+    ["a non-numeric value", rawSet({ parts: [values([1, "2", 3])] })],
     [
       "two parts for one content part",
-      rawLayer({ parts: [rawPart(), rawPart()] }),
+      rawSet({ parts: [rawPart(), rawPart()] }),
     ],
     [
       "a label outside its options",
-      labelLayer({ values: { kind: ["x"], suspects_test: ["no"] } }),
+      labelSet({ values: { kind: ["x"], suspects_test: ["no"] } }),
     ],
     [
       "a numeric label",
-      labelLayer({ values: { kind: [1], suspects_test: ["no"] } }),
+      labelSet({ values: { kind: [1], suspects_test: ["no"] } }),
     ],
     [
       "probabilities for a numeric field",
-      rawLayer({
+      rawSet({
         parts: [rawPart({ probabilities: { deception: [[1], [1], [1]] } })],
       }),
     ],
     [
       "probabilities for an unknown field",
-      labelLayer({ probabilities: { mood: [[0.5, 0.5]] } }),
+      labelSet({ probabilities: { mood: [[0.5, 0.5]] } }),
     ],
     [
       "probabilities without one entry per span",
-      labelLayer({ probabilities: { kind: [] } }),
+      labelSet({ probabilities: { kind: [] } }),
     ],
     [
       "probabilities without one per option",
-      labelLayer({ probabilities: { kind: [[1]] } }),
+      labelSet({ probabilities: { kind: [[1]] } }),
     ],
     [
       "a probability outside [0, 1]",
-      labelLayer({ probabilities: { kind: [[1.5, 0]] } }),
+      labelSet({ probabilities: { kind: [[1.5, 0]] } }),
     ],
   ])("rejects %s", (_name, raw) => {
-    expect(layerError(raw)).toBeDefined();
+    expect(setError(raw)).toBeDefined();
   });
 
-  it("rejects a layer named twice in one score, keeping the first", () => {
-    const result = parseTextAnnotations(
-      rawAnnotations([rawLayer(), rawLayer()])
-    );
-    expect(result.ok && result.value.map((layer) => layer.ok)).toEqual([
+  it("rejects a set named twice in one score, keeping the first", () => {
+    const result = parseTextAnnotations(rawAnnotations([rawSet(), rawSet()]));
+    expect(result.ok && result.value.map((set) => set.ok)).toEqual([
       true,
       false,
     ]);
   });
 
-  it("rejects a repeated layer name even when the first is invalid", () => {
+  it("rejects a repeated set name even when the first is invalid", () => {
     const result = parseTextAnnotations(
-      rawAnnotations([rawLayer({ unit: 3 }), rawLayer()])
+      rawAnnotations([rawSet({ unit: 3 }), rawSet()])
     );
-    expect(result.ok && result.value.map((layer) => layer.ok)).toEqual([
+    expect(result.ok && result.value.map((set) => set.ok)).toEqual([
       false,
       false,
     ]);
   });
 
-  it("validates each layer on its own", () => {
+  it("validates each set on its own", () => {
     const result = parseTextAnnotations(
-      rawAnnotations([rawLayer({ name: "bad", unit: 3 }), labelLayer()])
+      rawAnnotations([rawSet({ name: "bad", unit: 3 }), labelSet()])
     );
-    expect(result.ok && result.value.map((layer) => layer.ok)).toEqual([
+    expect(result.ok && result.value.map((set) => set.ok)).toEqual([
       false,
       true,
     ]);
