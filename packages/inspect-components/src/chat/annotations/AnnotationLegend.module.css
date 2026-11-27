@@ -42,7 +42,10 @@
   font-size: var(--inspect-font-size-smaller);
 }
 
+/* Set names run longer than field names ("Activation probes, mean over
+   each paragraph"); the header has the room. */
 .setSelect {
+  max-width: 32rem;
   font-weight: 600;
 }
 
