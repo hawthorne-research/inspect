@@ -33,7 +33,7 @@ Both pictures show a made-up demo transcript with made-up labels and values. You
 In a log's **Analytics** tab, next to Samples, the "Along the transcript" view plots annotation values across the log's samples, one panel per sample:
 
 - x is the position of each span (for example each paragraph) in the sample, in the annotation set you choose under **Spans**.
-- Up to two numeric fields are drawn as lines, the second on its own axis on the right. Each can have a dashed reference line and a fixed range. A field from an annotation set with other spans (for example per-token probe values) is first aggregated onto those spans, with the mean, max, min, sum or count.
+- Any number of numeric fields are drawn as lines (**Add series**), in the text colour or grey and solid, dashed or dotted, so they never look like a marker. Each series is drawn on an axis, and several series can share one: the first axis is on the left and the others are on the right, each further out than the one before. An axis is fitted to all its series' values unless you fix its range, and is labelled with its fields' names. Each series can have a dashed reference line. A field from an annotation set with other spans (for example per-token probe values) is first aggregated onto those spans, with the mean, max, min, sum or count.
 - **Markers** draws a vertical line at every span where a categorical field isn't one of its negative options, in that option's colour.
 - Grey lines mark where each message starts.
 - **Group by** titles and groups the panels by a sample score.
