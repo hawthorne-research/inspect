@@ -405,4 +405,22 @@ describe("the legend", () => {
     });
     expect(within(strip).getAllByRole("button")).toHaveLength(5);
   });
+
+  it("marks the strip segment of the span hovered in the messages", () => {
+    renderAnnotated("kind");
+    const strip = screen.getByRole("group", {
+      name: "Spans in transcript order",
+    });
+    const current = () =>
+      within(strip)
+        .getAllByRole("button")
+        .map((segment) => segment.getAttribute("aria-current"));
+    expect(current()).toEqual([null, null, null, null, null]);
+    const [, , there] = spansIn(screen.getByTestId("u1"));
+    if (!there) throw new Error();
+    fireEvent.mouseOver(there);
+    expect(current()).toEqual([null, null, "location", null, null]);
+    fireEvent.mouseOut(there, { relatedTarget: null });
+    expect(current()).toEqual([null, null, null, null, null]);
+  });
 });

@@ -10,7 +10,7 @@ import type {
 } from "@tsmono/inspect-common/types";
 
 import type { ResolvedSet } from "./sets";
-import { buildStrip } from "./strip";
+import { buildStrip, segmentOf } from "./strip";
 import {
   findingField,
   kindField,
@@ -162,6 +162,26 @@ describe("buildStrip", () => {
     expect(first?.style).toBeDefined();
     expect(second).toMatchObject({ label: "absent (4)", text: "First." });
     expect(second?.style).toBeUndefined();
+  });
+
+  it("finds the segment that covers a span", () => {
+    const l = set(kAllSpans);
+    const one = buildStrip(viewOf(l, "kind"));
+    expect(one.map((s) => s.first)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    // "Third." is span 0 of the third part, the 6th span overall.
+    expect(segmentOf(one, l, { part: 2, span: 0 })).toBe(5);
+
+    const runs = buildStrip(viewOf(l, "kind"), new Map(), 3);
+    expect(runs.map((s) => [s.first, s.count])).toEqual([
+      [0, 2],
+      [2, 2],
+      [4, 3],
+    ]);
+    expect(segmentOf(runs, l, { part: 0, span: 0 })).toBe(0);
+    expect(segmentOf(runs, l, { part: 0, span: 2 })).toBe(1);
+    expect(segmentOf(runs, l, { part: 1, span: 1 })).toBe(2);
+    expect(segmentOf(runs, l, { part: 3, span: 0 })).toBe(2);
+    expect(segmentOf([], l, { part: 0, span: 0 })).toBeUndefined();
   });
 
   it("is empty without spans", () => {

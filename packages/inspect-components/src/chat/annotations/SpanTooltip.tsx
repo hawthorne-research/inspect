@@ -1,9 +1,7 @@
 import clsx from "clsx";
-import { FC, useState } from "react";
+import { FC } from "react";
 
-import { useEventListener } from "@tsmono/react/hooks";
-
-import { hoveredSpan, type HoveredSpan } from "./dom";
+import type { HoveredSpan } from "./dom";
 import {
   fieldScale,
   fieldTitle,
@@ -29,26 +27,15 @@ const kRowsPerColumn = 18;
 const kMaxColumns = 3;
 
 /**
- * The one tooltip for every annotated span in the Messages tab: the span's
- * text, then the span's value of each field of the annotation set, each
- * with a bar (an option's probability, or a value against the field's
- * colour scale).
- * Listens for hover on the document rather than on each of the sample's
- * spans, and hides on scroll, which would leave it behind.
+ * The one tooltip for every annotated span in the Messages tab, for the
+ * span under the pointer (`useHoveredSpan`): the span's text, then the
+ * span's value of each field of the annotation set, each with a bar (an
+ * option's probability, or a value against the field's colour scale).
  */
-export const SpanTooltip: FC<{ view: AnnotationView }> = ({ view }) => {
-  const [hover, setHover] = useState<HoveredSpan | null>(null);
-  useEventListener(document, "mouseover", (e) => {
-    setHover(hoveredSpan(e, view.set));
-  });
-  // No mouseover follows when the pointer leaves the window.
-  useEventListener(document, "mouseout", (e) => {
-    if (!e.relatedTarget) setHover(null);
-  });
-  useEventListener(document, "scroll", () => setHover(null), {
-    capture: true,
-    passive: true,
-  });
+export const SpanTooltip: FC<{
+  view: AnnotationView;
+  hover: HoveredSpan | null;
+}> = ({ view, hover }) => {
   if (!hover) return null;
 
   const { part, span, rect } = hover;

@@ -9,6 +9,9 @@ const kTooltipWidth = 320;
 
 interface OverviewStripProps {
   segments: readonly StripSegment[];
+  /** The segment of the span hovered in the messages, marked so it shows
+   *  where that span is in the transcript. */
+  marked?: number;
   /** The annotation set's unit, e.g. "token" (see `spanNoun`). */
   unit: string | null;
   onSelect: (location: SpanLocation) => void;
@@ -21,6 +24,7 @@ interface OverviewStripProps {
  */
 export const OverviewStrip: FC<OverviewStripProps> = ({
   segments,
+  marked,
   unit,
   onSelect,
 }) => {
@@ -55,6 +59,7 @@ export const OverviewStrip: FC<OverviewStripProps> = ({
             // Hundreds of segments would swamp the tab order.
             tabIndex={-1}
             aria-label={`${segment.label}, message ${segment.messageNumber}`}
+            aria-current={index === marked ? "location" : undefined}
             className={clsx(
               styles.item,
               segment.startsMessage && styles.messageStart,
@@ -66,6 +71,18 @@ export const OverviewStrip: FC<OverviewStripProps> = ({
           />
         ))}
       </div>
+      {marked !== undefined && segments.length > 0 ? (
+        // Over the segments rather than on one: a segment can be a pixel
+        // or two wide, and the strip clips anything drawn around it.
+        <div
+          className={styles.marker}
+          aria-hidden
+          style={{
+            left: `${((marked + 0.5) / segments.length) * 100}%`,
+            width: `${100 / segments.length}%`,
+          }}
+        />
+      ) : null}
       {hover && hovered ? (
         <div
           className={styles.tooltip}

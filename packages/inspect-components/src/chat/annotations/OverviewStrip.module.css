@@ -31,6 +31,19 @@
   box-shadow: inset 0 0 0 1px var(--bs-body-color);
 }
 
+/* Around the segment of the span hovered in the messages, centred on it
+   and at least a few pixels wide however many segments there are. */
+.marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  min-width: 6px;
+  transform: translateX(-50%);
+  border: 2px solid var(--bs-body-color);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 .tooltip {
   position: absolute;
   top: calc(100% + 6px);

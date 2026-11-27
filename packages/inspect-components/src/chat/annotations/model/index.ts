@@ -69,7 +69,7 @@ export type { AnnotationView, OptionProbability, SpanValue } from "./view";
 export { annotationView, spanStyle, spanValue } from "./view";
 
 export type { SpanLocation, StripSegment } from "./strip";
-export { buildStrip, kMaxStripSegments } from "./strip";
+export { buildStrip, kMaxStripSegments, segmentOf } from "./strip";
 
 export type {
   Aggregation,

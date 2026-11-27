@@ -1,7 +1,7 @@
 import { summaryOption } from "./categorical";
 import { formatValue, peakIndex } from "./numeric";
 import type { SpanStyle } from "./schemes";
-import { spanText, type ResolvedPart } from "./sets";
+import { spanText, type ResolvedPart, type ResolvedSet } from "./sets";
 import { spanStyle, type AnnotationView } from "./view";
 
 /** Addresses one span of an annotation set: its part's `index`, and the
@@ -19,6 +19,9 @@ export const kMaxStripSegments = 300;
 export interface StripSegment {
   /** The span that colours the segment and that a click scrolls to. */
   location: SpanLocation;
+  /** The position of the segment's first span among the set's spans in
+   *  transcript order, from 0. */
+  first: number;
   /** How many spans the segment covers. */
   count: number;
   /** What the shown span stands for, e.g. an option or a peak value. */
@@ -64,6 +67,7 @@ export const buildStrip = (
       const { part, span } = shown;
       segments.push({
         location: { part: part.index, span },
+        first: from,
         count: run.length,
         label: summary.label,
         style: spanStyle(view, part, span),
@@ -80,6 +84,43 @@ export const buildStrip = (
     from = to;
   }
   return segments;
+};
+
+/**
+ * The index of the segment of `segments` (built by `buildStrip` from
+ * `set`'s view) that covers the span at `location`, e.g. the segment to
+ * mark while that span is hovered in the messages.
+ */
+export const segmentOf = (
+  segments: readonly StripSegment[],
+  set: ResolvedSet,
+  location: SpanLocation
+): number | undefined => {
+  let position = location.span;
+  for (const part of set.parts) {
+    if (part.index === location.part) break;
+    position += part.starts.length;
+  }
+  // Segments are in transcript order, so the last that starts at or before
+  // the span covers it.
+  let lo = 0;
+  let hi = segments.length - 1;
+  let found: number | undefined;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const segment = segments[mid];
+    if (!segment) break;
+    if (segment.first <= position) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  const segment = found === undefined ? undefined : segments[found];
+  return segment && position < segment.first + segment.count
+    ? found
+    : undefined;
 };
 
 /** Which of a segment's spans shows it, and what it stands for: the peak

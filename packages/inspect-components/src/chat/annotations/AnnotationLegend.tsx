@@ -12,6 +12,7 @@ import {
   metadataEntries,
   optionStyle,
   paletteColors,
+  segmentOf,
   spanCountLabel,
   spanNoun,
   withAlpha,
@@ -26,6 +27,7 @@ import {
 import { OverviewStrip } from "./OverviewStrip";
 import { SpanTooltip } from "./SpanTooltip";
 import { Swatch } from "./Swatch";
+import { useHoveredSpan } from "./useHoveredSpan";
 
 // A few short field names fit a segmented control; more fields, or long
 // names, go in a select.
@@ -63,6 +65,7 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
   onCycleScheme,
 }) => {
   const { set, field } = view;
+  const hover = useHoveredSpan(set);
   return (
     // Find skips the legend: its names would shadow the transcript.
     <section
@@ -109,8 +112,20 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
       ) : (
         <ColorBar scale={view.scale} palette={view.palette} />
       )}
-      <OverviewStrip segments={strip} unit={set.unit} onSelect={onSelectSpan} />
-      <SpanTooltip view={view} />
+      <OverviewStrip
+        segments={strip}
+        marked={
+          hover
+            ? segmentOf(strip, set, {
+                part: hover.part.index,
+                span: hover.span,
+              })
+            : undefined
+        }
+        unit={set.unit}
+        onSelect={onSelectSpan}
+      />
+      <SpanTooltip view={view} hover={hover} />
     </section>
   );
 };
