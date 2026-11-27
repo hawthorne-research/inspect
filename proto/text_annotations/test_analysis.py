@@ -213,7 +213,7 @@ def test_spans_df_columns_and_rows(logs: list[str]) -> None:
     paragraphs = spans[(spans["id"] == "s1") & (spans["layer"] == "paragraphs")]
     assert paragraphs["unit"].unique().tolist() == ["paragraph"]
     assert paragraphs["message_id"].tolist() == ["sys", "u1", "u1", "a1", "a1"]
-    assert paragraphs["order"].tolist() == [1, 2, 2, 3, 3]
+    assert paragraphs["message_index"].tolist() == [0, 1, 1, 2, 2]
     assert paragraphs["role"].tolist() == [
         "system",
         "user",
@@ -267,7 +267,7 @@ def test_spans_df_ids_join_onto_samples_df(logs: list[str]) -> None:
         assert (joined[column] == joined[f"{column}_sample"]).all()
 
 
-def test_spans_df_order_and_ids_match_messages_df(demo_log: str) -> None:
+def test_spans_df_ids_match_messages_df(demo_log: str) -> None:
     spans = spans_df(demo_log)
     messages = messages_df(demo_log, quiet=True)
     joined = spans.merge(
@@ -276,8 +276,10 @@ def test_spans_df_order_and_ids_match_messages_df(demo_log: str) -> None:
         suffixes=("", "_message"),
     )
     assert len(joined) == len(spans)
-    for column in ["eval_id", "log", "order", "role"]:
+    for column in ["eval_id", "log", "role"]:
         assert (joined[column] == joined[f"{column}_message"]).all()
+    # The demo's messages are all in the model events, so here they agree.
+    assert (joined["message_index"] + 1 == joined["order"]).all()
 
 
 def test_spans_df_reads_a_directory_and_paths(logs: list[str]) -> None:

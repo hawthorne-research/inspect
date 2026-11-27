@@ -15,12 +15,12 @@ The columns, in order:
 - `id`, `epoch`: the sample's dataset id and epoch, as in `samples_df`.
 - `score`, `layer`, `unit`: the score holding the layer, and the layer's name
   and unit.
-- `message_id`, `order`, `role`, `content_index`, `start`, `end`: where the
-  span is. `order` is the message's 1-based position in the sample's
-  messages. It is usually `messages_df`'s `order`, but `messages_df` reads
-  the messages from the model events, so it also counts a model output that
-  isn't in the sample's messages; join on `message_id`. `content_index` is
-  null for a message's string content.
+- `message_id`, `message_index`, `role`, `content_index`, `start`, `end`:
+  where the span is. `message_index` is the message's 0-based position in the
+  sample's messages. It isn't `messages_df`'s `order`, which counts from 1
+  over messages read from the model events (and so can include a model output
+  that isn't in the sample's messages); join with `messages_df` on
+  `message_id`. `content_index` is null for a message's string content.
 - `span_index`: 0-based position of the span among its layer's spans in the
   sample, in transcript order.
 - `text` (with `text=True`): the span's text.
@@ -85,7 +85,7 @@ SPAN_COLUMNS = [
     "layer",
     "unit",
     "message_id",
-    "order",
+    "message_index",
     "role",
     "content_index",
     "start",
@@ -105,7 +105,14 @@ CATEGORICAL_FIELDS = "categorical_fields"
 """Key in `DataFrame.attrs` of each layer's categorical fields: layer name to
 field name to its `FieldOptions`."""
 
-INTEGER_COLUMNS = {"epoch", "order", "content_index", "start", "end", "span_index"}
+INTEGER_COLUMNS = {
+    "epoch",
+    "message_index",
+    "content_index",
+    "start",
+    "end",
+    "span_index",
+}
 
 EXCLUDED_FIELDS = {"events", "store"}
 """Sample fields that `spans_df` doesn't read: they're large and not needed."""
@@ -226,17 +233,17 @@ def layer_names(layers: Sequence[str]) -> list[str]:
 class MessagePosition(NamedTuple):
     """Where a message is in a sample's messages."""
 
-    order: int
-    """1-based position in the messages."""
+    position: int
+    """0-based position in the messages."""
     role: Role
 
 
 def message_positions(sample: EvalSample) -> dict[str, MessagePosition]:
     """The position and role of each message with text, by message id."""
     positions: dict[str, MessagePosition] = {}
-    for order, message in enumerate(sample.messages, start=1):
+    for index, message in enumerate(sample.messages):
         for part in text_parts([message]):
-            positions[part.message_id] = MessagePosition(order, part.role)
+            positions[part.message_id] = MessagePosition(index, part.role)
     return positions
 
 
@@ -318,7 +325,7 @@ class SpanTable:
             spans = len(part.starts)
             position = positions[part.message_id]
             fixed["message_id"].extend([part.message_id] * spans)
-            fixed["order"].extend([position.order] * spans)
+            fixed["message_index"].extend([position.position] * spans)
             fixed["role"].extend([position.role] * spans)
             fixed["content_index"].extend([part.content_index] * spans)
             fixed["start"].extend(part.starts)
@@ -788,7 +795,9 @@ def in_transcript_order(spans: pd.DataFrame) -> pd.DataFrame:
     rank = {sample_id: index for index, sample_id in enumerate(first)}
     return (
         spans.assign(_sample=spans["sample_id"].map(rank))
-        .sort_values(["_sample", "order", "content_index", "start"], kind="stable")
+        .sort_values(
+            ["_sample", "message_index", "content_index", "start"], kind="stable"
+        )
         .drop(columns="_sample")
         .reset_index(drop=True)
     )

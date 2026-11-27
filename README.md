@@ -212,7 +212,7 @@ Its columns:
 - `sample_id`, `eval_id` and `log`, as in `samples_df` and `messages_df`. Join `samples_df` on `sample_id`, and `messages_df` on `sample_id` and `message_id`.
 - `id` and `epoch`: the sample's dataset id and epoch.
 - `score`, `layer` and `unit`.
-- Where the span is: `message_id`, `order` (the message's position in the sample's messages, from 1), `role`, `content_index`, `start` and `end`; and `span_index`, the span's position among its layer's spans in the sample, from 0.
+- Where the span is: `message_id`, `message_index` (the message's position in the sample's messages, from 0), `role`, `content_index`, `start` and `end`; and `span_index`, the span's position among its layer's spans in the sample, from 0. Join with `messages_df` on `message_id`.
 - `field_<name>` for each field: the option or the number, empty on rows of layers without that field.
 - With `text=True`, the span's `text`. With `probabilities=True`, a `prob_<field>_<option>` column for each option of each categorical field that has probabilities.
 
