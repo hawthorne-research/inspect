@@ -7,6 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./analytics": "./src/analytics/index.ts",
+    "./analytics/model": "./src/analytics/model/index.ts",
     "./chat": "./src/chat/index.ts",
     "./chat/annotations": "./src/chat/annotations/index.ts",
     "./chat/annotations/model": "./src/chat/annotations/model/index.ts",
@@ -32,6 +34,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@observablehq/plot": "^0.6.19",
     "@tsmono/inspect-common": "workspace:*",
     "@tsmono/react": "workspace:*",
     "@tsmono/theme": "workspace:*",

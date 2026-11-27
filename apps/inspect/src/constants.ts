@@ -3,6 +3,7 @@ export const kModelNone = "none/none";
 
 // Workspace tab constants
 export const kLogViewSamplesTabId = "samples";
+export const kLogViewAnalyticsTabId = "analytics";
 export const kLogViewJsonTabId = "json";
 export const kLogViewInfoTabId = "info";
 export const kLogViewModelsTabId = "models";
@@ -12,6 +13,7 @@ export const kLogViewErrorTabId = "error";
 
 export const kWorkspaceTabs = [
   kLogViewSamplesTabId,
+  kLogViewAnalyticsTabId,
   kLogViewJsonTabId,
   kLogViewInfoTabId,
   kLogViewModelsTabId,

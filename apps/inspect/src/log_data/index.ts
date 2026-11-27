@@ -54,6 +54,9 @@
 // - EvalSample    The complete sample: messages, events, scores. Large;
 //                 fetched on demand, cache-resident only while recently
 //                 viewed.
+// - projection    What a view keeps of each of a log's samples (e.g. its
+//                 annotations' span table): computed as the sample loads,
+//                 then the sample is dropped, so a whole log's worth fits.
 // - EvalSampleData The one answer to "show this sample": EvalSample +
 //                 status + still-streaming events. Which path serves the
 //                 EvalSample (completed fetch, error-summary fallback, live
@@ -150,6 +153,13 @@ export { useSampleMessages } from "./sampleMessages";
 export type { MessageRowsFeed } from "./messageRowsQuery";
 export { useChunkedSample, type ChunkedSampleData } from "./chunkedSampleQuery";
 export { useSampleSummaries } from "./sampleSummaries";
+export {
+  type ProjectedSample,
+  type SampleProjection,
+  type SampleProjectionError,
+  type SampleProjections,
+  useSampleProjections,
+} from "./sampleProjections";
 export { type ScorerMap, scorerMetricKey, useScoreSchema } from "./scoreSchema";
 export { FetchEngineController } from "./FetchEngineController";
 export { useDatabaseStats, useLastSyncedAt } from "./useFetchEngineStatus";

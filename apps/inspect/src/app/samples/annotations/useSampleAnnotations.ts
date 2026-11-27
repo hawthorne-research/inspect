@@ -33,6 +33,11 @@ import { useDarkTheme } from "./useDarkTheme";
 const kSelectionBag = "sample-annotations";
 const kNoHighlight: readonly string[] = [];
 
+/** The annotation colour scheme's id and its setter: one choice for every
+ *  view of annotations, kept across samples and logs. */
+export const useAnnotationScheme = () =>
+  useProperty<string>(kSelectionBag, "scheme");
+
 export interface SampleAnnotations {
   view: AnnotationView;
   layers: readonly ResolvedLayer[];
@@ -72,7 +77,7 @@ export function useSampleAnnotations(
     kSelectionBag,
     "fields"
   );
-  const [schemeId, setSchemeId] = useProperty<string>(kSelectionBag, "scheme");
+  const [schemeId, setSchemeId] = useAnnotationScheme();
   const palette = { scheme: colorScheme(schemeId), dark: useDarkTheme() };
   const [highlight, setHighlight] = useState<{
     layer: string;

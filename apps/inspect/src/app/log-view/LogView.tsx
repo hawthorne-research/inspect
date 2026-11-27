@@ -22,6 +22,7 @@ import { useLogNavigationAction } from "../routing/logNavigation";
 import { toFullUrlMaybe } from "../routing/url";
 
 import styles from "./LogView.module.css";
+import { useAnalyticsTabConfig } from "./tabs/AnalyticsTab";
 import { useErrorTabConfig } from "./tabs/ErrorTab";
 import { useInfoTabConfig } from "./tabs/InfoTab";
 import { useJsonTabConfig } from "./tabs/JsonTab";
@@ -49,6 +50,8 @@ export const LogView: FC = () => {
   const samplesTabConfig = useSamplesTabConfig(selectedLogDetails?.status, () =>
     refreshLog(logFile)
   );
+
+  const analyticsTabConfig = useAnalyticsTabConfig();
 
   const intoTabConfig = useInfoTabConfig(
     evalSpec,
@@ -93,6 +96,7 @@ export const LogView: FC = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tabs: Record<string, TabDescriptor<any>> = {
     samples: samplesTabConfig,
+    analytics: analyticsTabConfig,
     task: taskTabConfig,
     model: modelsTabConfig,
     timeline: timelineTabConfig,

@@ -108,6 +108,11 @@ invariant holds.
   EvalSample, stream, and status as one derivation. Which path serves the EvalSample
   (completed fetch, error-summary fallback, live stream, finalize handoff)
   is subsystem-private.
+- `useSampleProjections(handles, projection)` (`log_data/sampleProjections.ts`)
+  — what a view keeps of each of many completed samples (e.g. the Analytics
+  tab's span tables): each EvalSample is fetched a few at a time, projected
+  and dropped, and the projections are cached per (projection, log file,
+  sample). Per-sample failures are reported alongside the loaded values.
 - `usePassiveEvalSampleData(logDir, handle)` (`log_data/sampleData.ts`) — the
   EvalSampleData for a handle iff its EvalSample is resident, read passively
   (never fetches); else undefined. Absence is a normal answer: the EvalSample

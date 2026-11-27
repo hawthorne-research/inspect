@@ -39,6 +39,26 @@ export default tseslint.config(
       ],
     },
   },
+  // Views of the annotations are React-free in the same way, and reach the
+  // annotation model only through its barrel (and its test fixtures).
+  {
+    files: ["src/analytics/model/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(?!\\./|\\.\\./\\.\\./chat/annotations/model(/testFixtures)?$|@tsmono/util$|@tsmono/inspect-common/(types|testing|normalize)$|vitest$)",
+              message:
+                "The analytics model imports only model/ files, the annotation model and React-free packages listed in eslint.config.js.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Test helpers / fixture files — allow _-prefixed unused vars for API compat
   {
     files: ["**/*.test.ts", "**/testHelpers.ts", "**/syntheticNodes.ts"],
