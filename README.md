@@ -37,9 +37,11 @@ In a log's **Analytics** tab, next to Samples, the "Along the transcript" view p
 - **Markers** draws a vertical line at every span where a categorical field isn't one of its negative options, in that option's colour.
 - Grey lines mark where each message starts.
 - **Group by** titles and groups the panels by a sample score.
-- Clicking a panel opens that sample's Messages tab at that span's message.
+- Clicking a panel opens that sample's Messages tab, scrolls to that span and flashes it, as clicking the colour strip does. The Messages tab keeps its layer if that layer has the same span (for example another classifier of the same paragraphs) and otherwise switches to the layer under **Spans**. The link is in the URL, so it can be shared.
 
 The tab loads the samples when you open it, four at a time, and keeps only their annotations.
+
+A sample with annotations also has its own **Analytics** tab, next to Messages: the same view and settings for that sample alone, as one wide panel, without **Group by** and **Columns**.
 
 ## Setup
 
