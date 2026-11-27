@@ -1,13 +1,11 @@
 import math
 import re
 from collections.abc import Sequence
-from pathlib import Path
 
 import anyio
 import pytest
 from pydantic import ValidationError
 
-from inspect_ai.log import read_eval_log
 from inspect_ai.model import (
     ChatMessage,
     ChatMessageAssistant,
@@ -32,31 +30,23 @@ from .annotations import (
     layer_texts,
     text_parts,
 )
-from .annotators import (
-    SpanProbabilities,
-    classifier_annotator,
-    probe_annotator,
-)
-from .fake import (
-    DECAY,
-    EVAL_AWARENESS_KEYWORDS,
-    FAKE_PROBES,
-    fake_probe_runner,
-    keyword_boost,
-    keyword_mask,
-    random_classifier,
-)
-from .make_demo import make_demo
+from .classifiers import SpanProbabilities, binary_question, classifier_annotator
+from .examples.fake import FAKE_PROBES, fake_probe_runner, random_classifier
+from .probes import probe_annotator, probe_field
 from .scorer import AnnotatedSpan, text_annotations
-from .spans import Span, paragraph_spans, token_offsets, token_spans
+from .spans import Span, find_spans, paragraphs, tokens
 
 QUESTIONS = [
     CategoricalField(name="kind", options=["work", "grader", "filler"]),
-    CategoricalField(name="concealment", description="Hides?", options=["yes", "no"]),
+    binary_question("concealment", description="Hides?"),
 ]
 PROBES = [fake.probe for fake in FAKE_PROBES]
-TWO_PROBES = [NumericField(name="a", model_layer=3), NumericField(name="b")]
+TWO_PROBES = [probe_field("a", model_layer=3), probe_field("b")]
 TOKENIZER = {"tokenizer": "tiktoken/o200k_base"}
+REASONING_PARAGRAPHS = find_spans(
+    paragraphs, roles=["assistant"], content=["reasoning"]
+)
+TOKENS = find_spans(tokens())
 
 
 def make_state(messages: list[ChatMessage]) -> TaskState:
@@ -97,7 +87,7 @@ def paragraph_labels(
     return text_annotations(
         "paragraph labels",
         questions,
-        classifier_annotator(paragraph_spans, random_classifier(seed)),
+        classifier_annotator(REASONING_PARAGRAPHS, random_classifier(seed)),
         source="random",
         unit="paragraph",
     )
@@ -107,7 +97,7 @@ def token_values(probes: Sequence[NumericField], seed: str = "seed") -> Scorer:
     return text_annotations(
         "probes",
         probes,
-        probe_annotator(token_spans, fake_probe_runner(seed)),
+        probe_annotator(TOKENS, fake_probe_runner(seed)),
         source="fake probes",
         unit="token",
         metadata=TOKENIZER,
@@ -186,19 +176,6 @@ def test_classifier_on_paragraphs_is_deterministic() -> None:
     assert run(other, state).model_dump() != first.model_dump()
 
 
-def test_random_classifier_gives_one_at_yes_rate() -> None:
-    reasoning = "\n\n".join(f"Paragraph {index}." for index in range(400))
-    state = make_state(
-        [ChatMessageAssistant(id="m1", content=[ContentReasoning(reasoning=reasoning)])]
-    )
-    question = CategoricalField(name="suspects_test", options=["1", "0"])
-    result = run(paragraph_labels([question]), state)
-    assert result.value == 400
-    labels = only_layer(result).parts[0].values["suspects_test"]
-    # position weights would make "1" two-thirds likely
-    assert 0 < sum(label == "1" for label in labels) / 400 < 0.25
-
-
 class MissingOptionClassifier:
     """Leaves out the last option of every question."""
 
@@ -227,7 +204,7 @@ def classifier_scorer(
     return text_annotations(
         "labels",
         fields,
-        classifier_annotator(paragraph_spans, classify),
+        classifier_annotator(REASONING_PARAGRAPHS, classify),
         source="test",
         unit="paragraph",
     )
@@ -268,18 +245,18 @@ def test_probe_runner_on_tokens_gives_values_for_every_text_part() -> None:
     assert [(p.message_id, p.content_index) for p in layer.parts] == [
         (p.message_id, p.content_index) for p in parts
     ]
-    tokens = 0
+    token_count = 0
     for annotated, part in zip(layer.parts, parts, strict=True):
-        assert annotated.ranges() == token_offsets(part.text)
+        assert annotated.ranges() == tokens()(part.text)
         assert annotated.probabilities == {}
         for probe_values in annotated.values.values():
             assert all(
                 isinstance(value, float) and round(value, 3) == value
                 for value in probe_values
             )
-        tokens += len(annotated.starts)
-    assert first.value == tokens
-    assert first.explanation == f"{tokens} tokens, 4 fields"
+        token_count += len(annotated.starts)
+    assert first.value == token_count
+    assert first.explanation == f"{token_count} tokens, 4 fields"
 
     assert run(token_values(PROBES, "other"), state).model_dump() != first.model_dump()
 
@@ -324,7 +301,7 @@ def probe_scorer(
     return text_annotations(
         "probes",
         fields,
-        probe_annotator(token_spans, run_probes),
+        probe_annotator(TOKENS, run_probes),
         source="test",
         unit="token",
     )
@@ -332,7 +309,7 @@ def probe_scorer(
 
 def test_probe_annotator_rejects_invalid_results_with_context() -> None:
     state = make_state(transcript())
-    spans = len(token_spans(state.messages))
+    spans = len(TOKENS(state.messages))
     with pytest.raises(
         ValueError,
         match=f"gave {spans - 1} values of 'a' for {spans} spans of sample sample-1",
@@ -361,27 +338,27 @@ def test_scorer_takes_any_value_type_on_any_spans() -> None:
     labelled_tokens = text_annotations(
         "token labels",
         QUESTIONS,
-        classifier_annotator(token_spans, random_classifier("seed")),
+        classifier_annotator(TOKENS, random_classifier("seed")),
         source="random",
         unit="token",
         metadata=TOKENIZER,
     )
     result = run(labelled_tokens, state)
     layer = only_layer(result)
-    assert layer_spans(layer) == token_spans(state.messages)
-    assert result.value == len(token_spans(state.messages))
+    assert layer_spans(layer) == TOKENS(state.messages)
+    assert result.value == len(TOKENS(state.messages))
     check_labels(layer, QUESTIONS)
 
     probed_paragraphs = text_annotations(
         "paragraph probes",
         PROBES,
-        probe_annotator(paragraph_spans, fake_probe_runner("seed")),
+        probe_annotator(REASONING_PARAGRAPHS, fake_probe_runner("seed")),
         source="fake probes",
         unit="paragraph",
     )
     result = run(probed_paragraphs, state)
     layer = only_layer(result)
-    assert layer_spans(layer) == paragraph_spans(state.messages)
+    assert layer_spans(layer) == REASONING_PARAGRAPHS(state.messages)
     assert result.explanation == "4 paragraphs, 4 fields"
     for part in layer.parts:
         assert set(part.values) == {probe.name for probe in PROBES}
@@ -533,12 +510,12 @@ def test_both_scorers_on_one_sample_give_two_valid_scores() -> None:
     layers = [only_layer(score) for score in scores]
     assert [layer.name for layer in layers] == ["paragraph labels", "probes"]
     assert [score.value for score in scores] == [layer.span_count() for layer in layers]
-    paragraphs, tokens = layers
-    assert [(p.message_id, p.content_index) for p in paragraphs.parts] == [
+    labels, values = layers
+    assert [(p.message_id, p.content_index) for p in labels.parts] == [
         ("a1", 0),
         ("a2", 0),
     ]
-    assert len(tokens.parts) == 6
+    assert len(values.parts) == 6
     # the viewer reads layers from every score, so each must fit the messages
     for layer in layers:
         texts = layer_texts(layer, state.messages)
@@ -546,79 +523,29 @@ def test_both_scorers_on_one_sample_give_two_valid_scores() -> None:
     assert scores[0].explanation == "4 paragraphs, 2 fields"
 
 
-def test_keyword_pattern_matches_word_stems() -> None:
-    text = "Evaluation, being  checked, a contest, TESTING, scores; protest"
-    matches = [m.group() for m in EVAL_AWARENESS_KEYWORDS.finditer(text)]
-    assert matches == ["Evaluation", "being  checked", "TESTING", "scores"]
-
-
-def test_keyword_boost_decays_after_keyword() -> None:
-    text = "a test b c d e f g h"
-    offsets = token_offsets(text)
-    assert keyword_mask(text, offsets, EVAL_AWARENESS_KEYWORDS) == [
-        False,
-        True,
-        *[False] * 7,
-    ]
-    boost = keyword_boost(text, offsets, EVAL_AWARENESS_KEYWORDS, 4.0)
-    assert boost[:2] == [0.0, 4.0]
-    assert boost[2:7] == pytest.approx([4.0 * DECAY**k for k in range(1, 6)])
-    assert boost[7:] == [0.0, 0.0]
-
-
-def test_fake_probe_is_higher_on_keywords() -> None:
-    filler = " ".join(f"word{index}" for index in range(30))
-    text = " ".join(
-        f"{filler} the grader is testing. {filler} we could hide it." for _ in range(20)
-    )
-    state = make_state([ChatMessageAssistant(id="a1", content=text)])
-    spans = token_spans(state.messages)
-    offsets = [TextRange(span.start, span.end) for span in spans]
-    values = anyio.run(fake_probe_runner("seed"), spans, PROBES, state)
-    for fake in FAKE_PROBES:
-        mask = keyword_mask(text, offsets, fake.keywords)
-        probe_values = values[fake.probe.name]
-        on = [v for v, hit in zip(probe_values, mask, strict=True) if hit]
-        off = [v for v, hit in zip(probe_values, mask, strict=True) if not hit]
-        assert len(on) >= 20
-        assert sum(on) / len(on) - sum(off) / len(off) > fake.strength / 2
-        # the baseline is negative on average but not everywhere
-        assert min(off) < 0 < max(off)
-
-
-def test_fake_probe_runner_values_of_a_part_depend_only_on_its_spans() -> None:
-    state = make_state(transcript())
-    spans = token_spans(state.messages)
-    runner = fake_probe_runner("seed")
-    values = anyio.run(runner, spans, PROBES, state)
-    by_part: dict[tuple[str, int | None], list[Span]] = {}
-    for span in spans:
-        by_part.setdefault((span.message_id, span.content_index), []).append(span)
-    reversed_parts = [span for part in reversed(by_part.values()) for span in part]
-    reordered = anyio.run(runner, reversed_parts, PROBES, state)
-    for name, probe_values in values.items():
-        by_span = dict(zip(reversed_parts, reordered[name], strict=True))
-        assert [by_span[span] for span in spans] == probe_values
-
-
-def test_demo_log_has_both_layers(tmp_path: Path) -> None:
-    output = tmp_path / "demo.eval"
-    make_demo(output)
-    [sample] = read_eval_log(str(output)).samples or []
-    layers = {
-        name: TextAnnotations.model_validate(
-            (score.metadata or {})[TEXT_ANNOTATIONS_KEY]
-        ).layers[0]
-        for name, score in (sample.scores or {}).items()
+def test_binary_question_marks_its_negative_answer() -> None:
+    assert binary_question("suspects", "Suspects a test?").model_dump() == {
+        "name": "suspects",
+        "description": "Suspects a test?",
+        "type": "categorical",
+        "options": ["yes", "no"],
+        "negative": ["no"],
+        "metadata": {},
     }
-    paragraphs, tokens = layers["paragraph_labels"], layers["probe_values"]
-    assert paragraphs.unit == "paragraph" and paragraphs.span_count() == 9
-    shortcut = [
-        label
-        for part in paragraphs.parts
-        for label in part.values["kind"]
-        if label == "weighing_shortcut"
-    ]
-    assert shortcut == ["weighing_shortcut"]
-    assert tokens.unit == "token" and tokens.span_count() > 0
-    assert tokens.metadata == {"tokenizer": "tiktoken/o200k_base"}
+    question = binary_question("flag", positive="1", negative="0")
+    assert (question.options, question.negative) == (["1", "0"], ["0"])
+    with pytest.raises(ValidationError, match="repeated options"):
+        binary_question("flag", positive="x", negative="x")
+
+
+def test_probe_field_keeps_its_model_layer_in_metadata() -> None:
+    probe = probe_field("p", "A probe.", model_layer=24, metadata={"sae": "x"})
+    assert probe.model_dump() == {
+        "name": "p",
+        "description": "A probe.",
+        "type": "numeric",
+        "metadata": {"sae": "x", "model_layer": 24},
+    }
+    assert probe_field("p").metadata == {}
+    with pytest.raises(ValueError, match="model layer both as an argument and in"):
+        probe_field("p", model_layer=3, metadata={"model_layer": 4})

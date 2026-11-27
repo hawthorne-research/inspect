@@ -1,14 +1,15 @@
 """A scorer that stores the values of some fields on spans of a sample's text.
 
 `text_annotations` adds one layer of `TextAnnotations` to its score's
-metadata. An `Annotator` gives the layer's spans and their values; the
-`annotators` module builds one from a classifier or a probe runner and a
-`SpanFinder`.
+metadata. An `Annotator` gives the layer's spans and their values. Write one
+to attach values computed elsewhere, or build one from a `SpanFinder` and a
+classifier (`classifiers.classifier_annotator`) or a probe runner
+(`probes.probe_annotator`).
 """
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from pydantic import JsonValue
 
@@ -31,6 +32,8 @@ from .spans import Span
 
 ANNOTATION_METRICS: list[Metric] = [mean(), stderr()]
 """Mean number of spans per sample, and its standard error."""
+
+FieldType = TypeVar("FieldType", CategoricalField, NumericField)
 
 
 @dataclass(frozen=True)
@@ -289,3 +292,28 @@ def describe_sample(state: TaskState) -> str:
 def plural(count: int, noun: str) -> str:
     """E.g. "1 token" or "3 tokens"."""
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def fields_of_type(
+    fields: Sequence[CategoricalField | NumericField],
+    field_type: type[FieldType],
+    annotator: str,
+) -> list[FieldType]:
+    """The fields, after checking that all are of one type.
+
+    Args:
+        fields: Fields an annotator is asked to give values of.
+        field_type: Type of field the annotator gives values of.
+        annotator: Name of the annotator in error messages, e.g. "A classifier".
+
+    Raises:
+        ValueError: If a field isn't of `field_type`.
+    """
+    found = [field for field in fields if isinstance(field, field_type)]
+    if len(found) != len(fields):
+        others = [field.name for field in fields if not isinstance(field, field_type)]
+        raise ValueError(
+            f"{annotator} can't give values of {others}, which aren't "
+            f"{field_type.__name__}s"
+        )
+    return found

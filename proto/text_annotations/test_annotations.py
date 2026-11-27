@@ -20,7 +20,9 @@ from .annotations import (
     AnnotatedPart,
     AnnotationLayer,
     CategoricalField,
+    ContentType,
     NumericField,
+    Role,
     TextAnnotations,
     TextRange,
     layer_texts,
@@ -29,20 +31,23 @@ from .annotations import (
 from .spans import (
     PARAGRAPH_BREAK,
     Span,
-    check_content_types,
     check_covers,
-    paragraph_ranges,
-    paragraph_spans,
+    find_spans,
+    paragraphs,
     span_texts,
-    token_offsets,
-    token_spans,
+    tokens,
+    whole,
 )
 
 KIND = CategoricalField(name="kind", options=["work", "grader", "filler"])
 SUSPECTS = CategoricalField(
-    name="suspects", description="Suspects a test?", options=["1", "0"]
+    name="suspects",
+    description="Suspects a test?",
+    options=["1", "0"],
+    negative=["0"],
+    metadata={"codebook": "v2"},
 )
-PROBE = NumericField(name="probe", description="A probe.", model_layer=3)
+PROBE = NumericField(name="probe", description="A probe.", metadata={"model_layer": 3})
 FIELDS: list[CategoricalField | NumericField] = [KIND, SUSPECTS, PROBE]
 METADATA = {
     "tokenizer": "tiktoken/o200k_base",
@@ -95,7 +100,7 @@ def make_layer(
 
 
 def make_annotations(*layers: dict[str, Any], **changes: Any) -> dict[str, Any]:
-    return {"version": 0, "layers": list(layers)} | changes
+    return {"version": 1, "layers": list(layers)} | changes
 
 
 def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
@@ -129,18 +134,22 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
             "description": None,
             "type": "categorical",
             "options": ["work", "grader", "filler"],
+            "negative": [],
+            "metadata": {},
         },
         {
             "name": "suspects",
             "description": "Suspects a test?",
             "type": "categorical",
             "options": ["1", "0"],
+            "negative": ["0"],
+            "metadata": {"codebook": "v2"},
         },
         {
             "name": "probe",
             "description": "A probe.",
             "type": "numeric",
-            "model_layer": 3,
+            "metadata": {"model_layer": 3},
         },
     ]
     assert list(dumped["layers"][0]["parts"][0]) == [
@@ -169,10 +178,20 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
     assert annotations.layers[0].parts[0].ranges() == [(0, 3), (3, 6), (7, 9)]
 
 
-def test_layer_metadata_defaults_to_empty() -> None:
-    layer = make_layer()
+def test_layer_and_field_metadata_and_negative_default_to_empty() -> None:
+    layer = make_layer() | {
+        "fields": [
+            {"name": "kind", "type": "categorical", "options": ["a", "b"]},
+            {"name": "probe", "type": "numeric"},
+        ]
+    }
     del layer["metadata"]
-    assert AnnotationLayer.model_validate(layer).metadata == {}
+    validated = AnnotationLayer.model_validate(layer)
+    assert validated.metadata == {}
+    kind, probe = validated.fields
+    assert isinstance(kind, CategoricalField)
+    assert (kind.description, kind.negative, kind.metadata) == (None, [], {})
+    assert (probe.description, probe.metadata) == (None, {})
 
 
 def test_probabilities_are_optional_for_each_field() -> None:
@@ -307,9 +326,44 @@ def test_probabilities_are_optional_for_each_field() -> None:
         ),
         (
             make_annotations(
+                make_layer(fields=[SUSPECTS.model_copy(update={"negative": ["no"]})])
+            ),
+            "Negative options \\['no'\\] of field 'suspects' aren't among",
+        ),
+        (
+            make_annotations(
+                make_layer(
+                    fields=[SUSPECTS.model_copy(update={"negative": ["0", "0"]})]
+                )
+            ),
+            "repeated negative options",
+        ),
+        (
+            make_annotations(
+                make_layer(
+                    fields=[SUSPECTS.model_copy(update={"negative": ["1", "0"]})]
+                )
+            ),
+            "Every option of field 'suspects' is negative",
+        ),
+        (
+            make_annotations(
                 make_layer() | {"fields": [{"name": "x", "type": "text"}]}
             ),
             "does not match any of the expected tags",
+        ),
+        (
+            make_annotations(
+                make_layer()
+                | {"fields": [{"name": "x", "type": "numeric", "model_layer": 3}]}
+            ),
+            "Extra inputs are not permitted",
+        ),
+        (
+            make_annotations(
+                make_layer() | {"fields": [PROBE.model_dump() | {"metadata": None}]}
+            ),
+            "valid dictionary",
         ),
         # parts and layers
         (
@@ -324,7 +378,7 @@ def test_probabilities_are_optional_for_each_field() -> None:
         ),
         (make_annotations(make_layer(), make_layer()), "Layer names are repeated"),
         (make_annotations(make_layer(name="")), "at least 1 character"),
-        (make_annotations(version=1), "Input should be 0"),
+        (make_annotations(version=0), "Input should be 1"),
         (make_annotations(make_layer(source=None)), "valid string"),
         (make_annotations(make_layer(metadata=None)), "valid dictionary"),
         (make_annotations(make_layer(metadata={"x": {1, 2}})), "metadata.x"),
@@ -380,6 +434,38 @@ def test_text_parts_in_transcript_order() -> None:
     assert parts[2].text == "Is this a test? 🎉 Maybe.\n\nRead it."
 
 
+def test_text_parts_of_chosen_roles_and_kinds() -> None:
+    messages = transcript()
+
+    def keys(
+        roles: list[Role] | None, content: list[ContentType]
+    ) -> list[tuple[str, int | None]]:
+        return [
+            (part.message_id, part.content_index)
+            for part in text_parts(messages, roles, content)
+        ]
+
+    assert keys(["assistant"], ["reasoning"]) == [("a1", 0)]
+    assert keys(["assistant"], ["text"]) == [("a1", 2)]
+    # string content is text
+    assert keys(["user", "tool"], ["reasoning", "text"]) == [("u1", None), ("t1", None)]
+    assert keys(None, ["reasoning"]) == [("a1", 0)]
+    assert keys([], ["reasoning", "text"]) == []
+    # untyped callers can pass anything
+    unknown_role: Any = ["bot"]
+    unknown_kind: Any = ["reasoning", "image"]
+    one_role: Any = "assistant"
+    one_kind: Any = "reasoning"
+    with pytest.raises(ValueError, match="Unknown roles: \\['bot'\\]"):
+        text_parts(messages, unknown_role)
+    with pytest.raises(ValueError, match="Unknown content types: \\['image'\\]"):
+        text_parts(messages, None, unknown_kind)
+    with pytest.raises(TypeError, match="Give roles as a list"):
+        text_parts(messages, one_role)
+    with pytest.raises(TypeError, match="Give content types as a list"):
+        text_parts(messages, None, one_kind)
+
+
 def test_text_parts_need_unique_message_ids() -> None:
     messages = transcript()
     messages[3].id = None
@@ -431,7 +517,7 @@ def reference_split(text: str) -> list[str]:
 
 def test_paragraph_offsets_with_emoji_and_surrounding_whitespace() -> None:
     text = "\n  First line\nsame paragraph.  \n\n \t\n  Party 🎉 time!\t\n\n\nLast 😀"
-    ranges = paragraph_ranges(text)
+    ranges = paragraphs(text)
     assert [text[start:end] for start, end in ranges] == [
         "First line\nsame paragraph.",
         "Party 🎉 time!",
@@ -454,11 +540,11 @@ def test_paragraph_offsets_with_emoji_and_surrounding_whitespace() -> None:
     ],
 )
 def test_paragraphs_match_reference_split(text: str) -> None:
-    ranges = paragraph_ranges(text)
+    ranges = paragraphs(text)
     assert [text[start:end] for start, end in ranges] == reference_split(text)
 
 
-def test_paragraph_spans_reads_assistant_parts() -> None:
+def test_find_spans_splits_the_chosen_text_parts() -> None:
     assistant = ChatMessageAssistant(
         id="m1",
         content=[
@@ -472,25 +558,44 @@ def test_paragraph_spans_reads_assistant_parts() -> None:
         assistant,
         ChatMessageAssistant(id="m2", content="Plain.\n\nString."),
     ]
-    spans = paragraph_spans(messages)
+    reasoning = find_spans(paragraphs, roles=["assistant"], content=["reasoning"])
+    spans = reasoning(messages)
     assert spans == [Span("m1", 0, 0, 5), Span("m1", 0, 7, 11)]
     assert span_texts(spans, messages) == ["Plan.", "Act."]
-    both = paragraph_spans(messages, ("reasoning", "text"))
-    # the user's message isn't split, and string content is text
-    assert [
-        (span.message_id, span.content_index, text)
-        for span, text in zip(both, span_texts(both, messages), strict=True)
-    ][2:] == [
+
+    def located(spans: list[Span]) -> list[tuple[str, int | None, str]]:
+        texts = span_texts(spans, messages)
+        return [
+            (span.message_id, span.content_index, text)
+            for span, text in zip(spans, texts, strict=True)
+        ]
+
+    # string content is text
+    assert located(find_spans(paragraphs, roles=["assistant"])(messages))[2:] == [
         ("m1", 2, "Answer."),
         ("m1", 2, "Done."),
         ("m2", None, "Plain."),
         ("m2", None, "String."),
     ]
-    assistant.id = None
-    with pytest.raises(ValueError, match="no id"):
-        paragraph_spans(messages)
+    assert [text for *_, text in located(find_spans(whole)(messages))] == [
+        "Hi.\n\nThere.",
+        "Plan.\n\nAct.",
+        "Answer.\n\nDone.",
+        "Plain.\n\nString.",
+    ]
+    assert find_spans(whole, roles=["tool"])(messages) == []
+
+    messages[0].id = None
+    with pytest.raises(ValueError, match="user message with text has no id"):
+        reasoning(messages)
+    unknown_kind: Any = ["reasoning", "image"]
     with pytest.raises(ValueError, match="Unknown content types: \\['image'\\]"):
-        check_content_types(["reasoning", "image"])
+        find_spans(paragraphs, content=unknown_kind)
+
+
+def test_whole_is_one_span_of_a_non_empty_text() -> None:
+    assert whole("Party 🎉") == [TextRange(0, 7)]
+    assert whole("") == []
 
 
 @pytest.mark.parametrize(
@@ -504,18 +609,23 @@ def test_paragraph_spans_reads_assistant_parts() -> None:
         "  \n\n\tindented\r\n<|endoftext|> after",
     ],
 )
-def test_token_offsets_cover_text_without_empty_tokens(text: str) -> None:
-    offsets = token_offsets(text)
+def test_tokens_cover_text_without_empty_tokens(text: str) -> None:
+    offsets = tokens()(text)
     assert "".join(text[start:end] for start, end in offsets) == text
     assert all(start < end for start, end in offsets)
     check_covers(text, offsets)
 
 
-def test_token_offsets_merge_tokens_of_one_character() -> None:
+def test_tokens_merge_tokens_of_one_character() -> None:
     # each of these 4-byte characters is split over several tokens
     text = " 𝔘𝔫"
-    offsets = token_offsets(text)
+    offsets = tokens()(text)
     assert offsets == [(0, 1), (1, 2), (2, 3)]
+
+
+def test_tokens_checks_the_encoding_when_made() -> None:
+    with pytest.raises(ValueError, match="Unknown encoding no_such_encoding"):
+        tokens("no_such_encoding")
 
 
 def test_check_covers_rejects_gaps_and_empty_tokens() -> None:
@@ -527,9 +637,9 @@ def test_check_covers_rejects_gaps_and_empty_tokens() -> None:
         check_covers("abcd", [TextRange(0, 3)])
 
 
-def test_token_spans_cover_every_text_part_in_order() -> None:
+def test_find_spans_tokens_cover_every_text_part_in_order() -> None:
     messages = transcript()
-    spans = token_spans(messages)
+    spans = find_spans(tokens())(messages)
     parts = text_parts(messages)
     keys = [(part.message_id, part.content_index) for part in parts]
     assert list(dict.fromkeys((s.message_id, s.content_index) for s in spans)) == keys
@@ -537,7 +647,7 @@ def test_token_spans_cover_every_text_part_in_order() -> None:
         ranges = [
             (s.start, s.end) for s in spans if (s.message_id, s.content_index) == key
         ]
-        assert ranges == token_offsets(part.text)
+        assert ranges == tokens()(part.text)
     assert "".join(span_texts(spans, messages)) == "".join(p.text for p in parts)
 
 

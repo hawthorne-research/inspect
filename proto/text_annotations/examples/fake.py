@@ -1,7 +1,8 @@
 """A fake classifier and a fake probe runner, for building viewers and tests.
 
 Both work on spans of any size, through `classifier_annotator` and
-`probe_annotator`.
+`probe_annotator`. The values are random but deterministic, and look
+plausible: answers follow a prior, and probe values rise on keywords.
 """
 
 import hashlib
@@ -15,15 +16,18 @@ from typing import NamedTuple
 
 from inspect_ai.solver import TaskState
 
-from .annotations import (
+from .. import (
     CategoricalField,
+    Classifier,
     NumericField,
+    ProbeRunner,
+    Span,
+    SpanProbabilities,
     TextRange,
-    describe_part,
+    probe_field,
     text_parts,
 )
-from .annotators import Classifier, ProbeRunner, SpanProbabilities
-from .spans import Span
+from ..annotations import describe_part
 
 
 def seeded_random(*key: object) -> random.Random:
@@ -43,16 +47,18 @@ def random_classifier(
     The probabilities for a question are a Dirichlet draw (normalised gamma
     draws) with parameters `concentration * prior`, rounded to two decimals.
     A small concentration gives peaked distributions whose most probable
-    option roughly follows the prior. For yes/no questions, whose options are
-    "yes" and "no" or "1" and "0", the prior of "yes" or "1" is `yes_rate`;
-    for other questions it falls off with the option's position (1, 1/2,
-    1/3, ... normalised), so earlier options are more common.
+    option roughly follows the prior. For yes/no questions (two options, one
+    of them negative, as `binary_question` makes), the prior of the other
+    option is `yes_rate`; for other questions it falls off with the option's
+    position (1, 1/2, 1/3, ... normalised), so earlier options are more
+    common.
 
     Args:
         seed: Extra seed text, e.g. the eval id, so that samples with the
             same id in different logs get different labels.
         concentration: Total of the Dirichlet parameters.
-        yes_rate: Prior probability of "yes" or "1" for yes/no questions.
+        yes_rate: Prior probability of the answer that isn't negative, for
+            yes/no questions.
     """
 
     async def classify(
@@ -73,9 +79,11 @@ def random_classifier(
 
 
 def _prior(question: CategoricalField, yes_rate: float) -> dict[str, float]:
-    for positive, negative in (("yes", "no"), ("1", "0")):
-        if set(question.options) == {positive, negative}:
-            return {positive: yes_rate, negative: 1.0 - yes_rate}
+    if len(question.options) == 2 and len(question.negative) == 1:
+        return {
+            option: 1.0 - yes_rate if option in question.negative else yes_rate
+            for option in question.options
+        }
     weights = [1.0 / (position + 1) for position in range(len(question.options))]
     return {
         option: weight / sum(weights)
@@ -167,8 +175,8 @@ class FakeProbe(NamedTuple):
 FAKE_PROBES = [
     *(
         FakeProbe(
-            NumericField(
-                name=f"eval_awareness_L{layer}",
+            probe_field(
+                f"eval_awareness_L{layer}",
                 description=(
                     "Linear probe for evaluation awareness (the model thinks it "
                     f"is being tested) on the residual stream at layer {layer}."
@@ -182,8 +190,8 @@ FAKE_PROBES = [
         for layer, strength, noise in [(16, 2.0, 1.3), (24, 4.0, 1.0), (32, 6.0, 0.7)]
     ),
     FakeProbe(
-        NumericField(
-            name="deception_L24",
+        probe_field(
+            "deception_L24",
             description="Linear probe for deception on the residual stream at layer 24.",
             model_layer=24,
         ),

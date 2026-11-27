@@ -5,14 +5,15 @@ layers of spans of the messages' text, with the value of some categorical or
 numeric fields on each span. `text_annotations` is a scorer that adds one
 layer, with the spans and values an `Annotator` gives.
 
-`paragraph_spans` and `token_spans` find spans; `classifier_annotator` and
-`probe_annotator` apply a classifier or a probe runner to them.
-`random_classifier` and `fake_probe_runner` make up plausible values for
-building viewers and tests.
+`find_spans` finds spans: it splits the text parts of the roles and kinds
+you choose with a `Splitter` (`paragraphs`, `tokens()` or `whole`).
+`classifier_annotator` and `probe_annotator` apply a classifier or a probe
+runner to the spans; `binary_question` and `probe_field` make their fields.
+
+Fakes and example scripts are in the `examples` subpackage.
 """
 
 from .annotations import (
-    REASONING,
     TEXT_ANNOTATIONS_KEY,
     AnnotatedPart,
     AnnotationField,
@@ -20,6 +21,7 @@ from .annotations import (
     CategoricalField,
     ContentType,
     NumericField,
+    Role,
     TextAnnotations,
     TextPart,
     TextRange,
@@ -27,14 +29,13 @@ from .annotations import (
     layer_texts,
     text_parts,
 )
-from .annotators import (
+from .classifiers import (
     Classifier,
-    ProbeRunner,
     SpanProbabilities,
+    binary_question,
     classifier_annotator,
-    probe_annotator,
 )
-from .fake import FAKE_PROBES, FakeProbe, fake_probe_runner, random_classifier
+from .probes import ProbeRunner, probe_annotator, probe_field
 from .scorer import (
     ANNOTATION_METRICS,
     AnnotatedSpan,
@@ -46,18 +47,17 @@ from .spans import (
     PARAGRAPH_BREAK,
     Span,
     SpanFinder,
-    paragraph_ranges,
-    paragraph_spans,
+    Splitter,
+    find_spans,
+    paragraphs,
     span_texts,
-    token_offsets,
-    token_spans,
+    tokens,
+    whole,
 )
 
 __all__ = [
     "ANNOTATION_METRICS",
-    "FAKE_PROBES",
     "PARAGRAPH_BREAK",
-    "REASONING",
     "TEXT_ANNOTATIONS_KEY",
     "AnnotatedPart",
     "AnnotatedSpan",
@@ -67,27 +67,28 @@ __all__ = [
     "CategoricalField",
     "Classifier",
     "ContentType",
-    "FakeProbe",
     "NumericField",
     "ProbeRunner",
+    "Role",
     "Span",
     "SpanFinder",
     "SpanProbabilities",
+    "Splitter",
     "TextAnnotations",
     "TextPart",
     "TextRange",
     "annotation_score",
+    "binary_question",
     "check_spans_fit",
     "classifier_annotator",
-    "fake_probe_runner",
+    "find_spans",
     "layer_texts",
-    "paragraph_ranges",
-    "paragraph_spans",
+    "paragraphs",
     "probe_annotator",
-    "random_classifier",
+    "probe_field",
     "span_texts",
     "text_annotations",
     "text_parts",
-    "token_offsets",
-    "token_spans",
+    "tokens",
+    "whole",
 ]

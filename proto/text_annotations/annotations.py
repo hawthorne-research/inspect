@@ -5,7 +5,10 @@ Annotations are stored in a score's metadata under `text_annotations`, as
 gives the value of one or more fields on each of its spans, which can be any
 non-overlapping ranges of the text. A field is categorical (one of a list of
 options, e.g. a classifier's answer to a question, optionally with the
-probability of each option) or numeric (e.g. a probe's value).
+probability of each option) or numeric (e.g. a probe's value). A categorical
+field's `negative` options are those that mean nothing was found, e.g. "no".
+Fields and layers have a `metadata` dict for anything else about how they
+were made.
 
 A layer's spans are grouped into parts, one per text part of a message:
 `message_id` and `content_index` find the text, and `starts` and `ends` are
@@ -16,8 +19,8 @@ parts that aren't redacted, and the message's `content` when that is a string
 """
 
 import math
-from collections.abc import Sequence
-from typing import Annotated, Literal, NamedTuple
+from collections.abc import Collection, Sequence
+from typing import Annotated, Literal, NamedTuple, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -31,9 +34,6 @@ PROBABILITY_TOLERANCE = 0.01
 
 ContentType = Literal["reasoning", "text"]
 """Kinds of text part: reasoning, or text (including a message's string content)."""
-
-REASONING: tuple[ContentType, ...] = ("reasoning",)
-"""Reasoning parts only."""
 
 Role = Literal["system", "user", "assistant", "tool"]
 """Role of a message."""
@@ -57,10 +57,16 @@ class CategoricalField(_FormatModel):
     type: Literal["categorical"] = "categorical"
 
     options: list[str]
-    """Possible values (at least two, all different).
+    """Possible values (at least two, all different)."""
 
-    Yes/no fields use `["yes", "no"]` or `["1", "0"]`.
-    """
+    negative: list[str] = Field(default_factory=list)
+    """Options that mean nothing was found, e.g. "no" for a yes/no question.
+
+    Some of the options, all different, but not all of them. A viewer can
+    leave spans with these values untinted, to show only what was found."""
+
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    """Anything else about the field, e.g. how its values were made."""
 
     @model_validator(mode="after")
     def _check_options(self) -> "CategoricalField":
@@ -71,6 +77,20 @@ class CategoricalField(_FormatModel):
         if len(set(self.options)) != len(self.options):
             raise ValueError(
                 f"Field '{self.name}' has repeated options: {self.options}"
+            )
+        unknown = [option for option in self.negative if option not in self.options]
+        if unknown:
+            raise ValueError(
+                f"Negative options {unknown} of field '{self.name}' aren't among "
+                f"its options {self.options}"
+            )
+        if len(set(self.negative)) != len(self.negative):
+            raise ValueError(
+                f"Field '{self.name}' has repeated negative options: {self.negative}"
+            )
+        if len(self.negative) == len(self.options):
+            raise ValueError(
+                f"Every option of field '{self.name}' is negative: {self.negative}"
             )
         return self
 
@@ -86,8 +106,8 @@ class NumericField(_FormatModel):
 
     type: Literal["numeric"] = "numeric"
 
-    model_layer: int | None = None
-    """Layer of the model whose activations a probe reads, if any."""
+    metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    """Anything else about the field, e.g. `{"model_layer": 24}` for a probe."""
 
 
 AnnotationField = Annotated[
@@ -256,7 +276,7 @@ class AnnotationLayer(_FormatModel):
 class TextAnnotations(_FormatModel):
     """The annotation layers of one score."""
 
-    version: Literal[0] = 0
+    version: Literal[1] = 1
     """Version of this format."""
 
     layers: list[AnnotationLayer]
@@ -314,19 +334,32 @@ class TextPart(NamedTuple):
     text: str
 
 
-def text_parts(messages: Sequence[ChatMessage]) -> list[TextPart]:
-    """The non-empty texts of every message, in transcript order.
+def text_parts(
+    messages: Sequence[ChatMessage],
+    roles: Collection[Role] | None = None,
+    content: Collection[ContentType] = ("reasoning", "text"),
+) -> list[TextPart]:
+    """The non-empty texts of the messages, in transcript order.
 
-    Reads messages of every role. A message whose content is a string gives
-    one part with `content_index` None. Otherwise each text part and each
-    reasoning part that isn't redacted (its text is encrypted) gives a part;
-    other content (images, tool use and so on) and assistant tool calls give
-    none. Empty texts are skipped, since they have no spans.
+    A message whose content is a string gives one part with `content_index`
+    None. Otherwise each text part and each reasoning part that isn't redacted
+    (its text is encrypted) gives a part; other content (images, tool use and
+    so on) and assistant tool calls give none. Empty texts are skipped, since
+    they have no spans.
+
+    Args:
+        messages: Messages of the transcript.
+        roles: Roles of the messages to read, or None for every role.
+        content: Kinds of part to read (every kind by default).
 
     Raises:
-        ValueError: If a message with text has no id or the same id as an
-            earlier one.
+        TypeError: If `roles` or `content` is a string rather than a
+            collection of them.
+        ValueError: If `roles` or `content` names an unknown role or kind of
+            part, or a message with text (of any role) has no id or the same
+            id as an earlier one.
     """
+    check_selection(roles, content)
     parts: list[TextPart] = []
     seen_ids: set[str] = set()
     for message in messages:
@@ -334,11 +367,11 @@ def text_parts(messages: Sequence[ChatMessage]) -> list[TextPart]:
         if isinstance(message.content, str):
             found.append((None, "text", message.content))
         else:
-            for content_index, content in enumerate(message.content):
-                if isinstance(content, ContentReasoning) and not content.redacted:
-                    found.append((content_index, "reasoning", content.reasoning))
-                elif isinstance(content, ContentText):
-                    found.append((content_index, "text", content.text))
+            for content_index, part in enumerate(message.content):
+                if isinstance(part, ContentReasoning) and not part.redacted:
+                    found.append((content_index, "reasoning", part.reasoning))
+                elif isinstance(part, ContentText):
+                    found.append((content_index, "text", part.text))
         found = [(index, kind, text) for index, kind, text in found if text]
         if not found:
             continue
@@ -347,11 +380,37 @@ def text_parts(messages: Sequence[ChatMessage]) -> list[TextPart]:
         if message.id in seen_ids:
             raise ValueError(f"Two messages with text have the same id: {message.id}")
         seen_ids.add(message.id)
-        parts += [
-            TextPart(message.id, message.role, index, kind, text)
-            for index, kind, text in found
-        ]
+        if roles is None or message.role in roles:
+            parts += [
+                TextPart(message.id, message.role, index, kind, text)
+                for index, kind, text in found
+                if kind in content
+            ]
     return parts
+
+
+def check_selection(roles: Collection[str] | None, content: Collection[str]) -> None:
+    """Check that roles and kinds of part are known ones.
+
+    Raises:
+        TypeError: If `roles` or `content` is a string rather than a
+            collection of them.
+        ValueError: If a role isn't a `Role` or a kind of part isn't a
+            `ContentType`.
+    """
+    for name, selected, known in (
+        ("roles", roles, get_args(Role)),
+        ("content types", content, get_args(ContentType)),
+    ):
+        if selected is None:
+            continue
+        if isinstance(selected, str):
+            raise TypeError(f"Give {name} as a list, not the string {selected!r}")
+        unknown = set(selected) - set(known)
+        if unknown:
+            raise ValueError(
+                f"Unknown {name}: {sorted(unknown)} (expected some of {list(known)})"
+            )
 
 
 def check_spans_fit(part: AnnotatedPart, text: str) -> None:

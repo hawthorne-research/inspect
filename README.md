@@ -74,7 +74,7 @@ Then open <http://localhost:5173>.
 `make_demo` writes a log with a made-up transcript annotated both ways: a coding agent fixes a function, finds a note saying that only the tests are graded, and considers gaming them. A toy keyword classifier labels each reasoning paragraph, and fake probes give every token a value that rises on words about tests and grading. Inspect's mock model plays the agent, so no API key is needed.
 
 ```bash
-uv run python -m proto.text_annotations.make_demo --output demo/text-annotations-demo.eval
+uv run python -m proto.text_annotations.examples.make_demo --output demo/text-annotations-demo.eval
 uv run inspect view start --log-dir demo --port 7575
 ```
 
@@ -82,7 +82,7 @@ Then run `pnpm dev` as above and open the log at <http://localhost:5173>.
 
 ## Add annotations to a log
 
-The Python code is in `proto/text_annotations/`. It isn't part of the installed `inspect_ai` package, so put your scripts in the repository root, or run them from there with `PYTHONPATH=.`, so that `proto` can be imported.
+The Python code is in `proto/text_annotations/`; the demo script and the fake classifier and probe runner are in its `examples/` folder. It isn't part of the installed `inspect_ai` package, so put your scripts in the repository root, or run them from there with `PYTHONPATH=.`, so that `proto` can be imported.
 
 Annotations are added by an ordinary scorer, `text_annotations`, so you can add them during an eval or afterwards to existing logs with `inspect_ai.score`. Each call adds one **layer**: a set of spans with the value of one or more **fields** on each. Its arguments are the layer's name, its fields, an **annotator** that returns the spans with their values, a `source` naming what produced the values, and a `unit` naming what a span is (for display only).
 
@@ -90,24 +90,26 @@ To add more than one layer to a log, give each its own scorer name by wrapping t
 
 ### Label paragraphs with a classifier
 
-`paragraph_spans` splits each assistant message's reasoning into paragraphs (text separated by blank lines). `classifier_annotator` asks your classifier about each one, labels it with the most probable option, and keeps the probabilities.
+`find_spans` chooses which text to annotate and how to split it into spans. Below, `find_spans(paragraphs, roles=["assistant"], content=["reasoning"])` splits each assistant message's reasoning into paragraphs (text separated by blank lines). Leave out `roles` to read messages of every role, and `content` to read both reasoning and text. The other splitters are `tokens()`, which splits text into tiktoken tokens, and `whole`, which keeps each text whole. A splitter of your own is a function that takes a text and returns a list of `TextRange(start, end)`.
+
+`classifier_annotator` asks your classifier about each span, labels it with the most probable option, and keeps the probabilities.
 
 ```python
 from inspect_ai.scorer import scorer
 
 from proto.text_annotations import (
     ANNOTATION_METRICS,
-    CategoricalField,
+    binary_question,
     classifier_annotator,
-    paragraph_spans,
+    find_spans,
+    paragraphs,
     text_annotations,
 )
 
 QUESTIONS = [
-    CategoricalField(
-        name="suspects_test",
+    binary_question(
+        "suspects_test",
         description="Does the agent suspect it is being tested?",
-        options=["yes", "no"],
     ),
 ]
 
@@ -123,24 +125,27 @@ def paragraph_labels():
     return text_annotations(
         "paragraph labels",
         QUESTIONS,
-        classifier_annotator(paragraph_spans, classify),
+        classifier_annotator(
+            find_spans(paragraphs, roles=["assistant"], content=["reasoning"]),
+            classify,
+        ),
         source="my-classifier",
         unit="paragraph",
     )
 ```
 
-For a yes/no field, use the options `["yes", "no"]` or `["1", "0"]`: the viewer then tints only "yes" (or "1") paragraphs.
+`binary_question` makes a field with the options `["yes", "no"]`, and lists "no" in the field's `negative` options: those that mean nothing was found. The viewer leaves spans with a negative value untinted, so only the "yes" paragraphs stand out. To name the options differently, pass e.g. `positive="1", negative="0"`. For other questions, use `CategoricalField(name=..., options=[...], negative=[...])`; `negative` is optional.
 
 ### Per-token probe values computed elsewhere
 
 Probes usually run outside Inspect, on a model's activations. Save each token's position and value, then attach them with your own annotator: a function that returns an `AnnotatedSpan` for each span.
 
 ```python
-from proto.text_annotations import AnnotatedSpan, NumericField, Span
+from proto.text_annotations import AnnotatedSpan, Span, probe_field
 
 PROBES = [
-    NumericField(
-        name="eval_awareness_L32",
+    probe_field(
+        "eval_awareness_L32",
         description="Linear probe for evaluation awareness",
         model_layer=32,
     ),
@@ -178,9 +183,9 @@ What each span refers to:
 - `content_index` is the index of the part in the message's `content` list, or `None` when the message's content is a plain string.
 - `start` and `end` are Unicode code-point offsets (Python string indices) into that part's text: a `ContentText`'s `text`, a `ContentReasoning`'s `reasoning`, or the string content. They are the character offsets a Hugging Face fast tokenizer gives with `return_offsets_mapping=True`, as long as you tokenised that text on its own. If you tokenised the whole chat-formatted conversation, map the offsets back to each part. Tokens the chat template adds have no text in the log and are left out.
 
-A layer can have several fields, for example the same probe at several layers. Every span then needs a value for each.
+`probe_field` makes a numeric field and stores the model layer in its `metadata`. A layer can have several fields, for example the same probe at several model layers. Every span then needs a value for each.
 
-To run probes inside the scorer instead, `probe_annotator(token_spans, run_probes)` splits every message into tiktoken `o200k_base` tokens and gives your runner the spans.
+To run probes inside the scorer instead, `probe_annotator(find_spans(tokens()), run_probes)` splits every message into tiktoken `o200k_base` tokens and gives your runner the spans.
 
 ### Add the annotations to an existing log
 
@@ -204,15 +209,23 @@ Each scorer stores its layers in `Score.metadata["text_annotations"]`:
 
 ```
 {
-  "version": 0,
+  "version": 1,
   "layers": [
     {
       "name": str, "unit": str, "source": str,
       "description": str | null,
       "metadata": {str: JSON value},
       "fields": [
-        {"name": str, "description": str | null, "type": "categorical", "options": [str, ...]},
-        {"name": str, "description": str | null, "type": "numeric", "model_layer": int | null}
+        {
+          "name": str, "description": str | null, "type": "categorical",
+          "options": [str, ...],
+          "negative": [str, ...],
+          "metadata": {str: JSON value}
+        },
+        {
+          "name": str, "description": str | null, "type": "numeric",
+          "metadata": {str: JSON value}
+        }
       ],
       "parts": [
         {
@@ -228,7 +241,7 @@ Each scorer stores its layers in `Score.metadata["text_annotations"]`:
 }
 ```
 
-Each part holds the spans in one message part, in order and not overlapping; parts are in transcript order. `probabilities` is optional. The Pydantic models in `proto/text_annotations/annotations.py` check every rule.
+`negative` lists the options that mean nothing was found: some of the options, but not all. Each part holds the spans in one message part, in order and not overlapping; parts are in transcript order. `negative`, the `metadata` dicts and `probabilities` are optional. The Pydantic models in `proto/text_annotations/annotations.py` check every rule.
 
 ## Limitations
 

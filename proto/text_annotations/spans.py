@@ -1,7 +1,10 @@
 """Spans of transcript text: ranges of a message part's text to give values to.
 
-`paragraph_spans` and `token_spans` find spans in a transcript's messages.
-Both give `Span`s, so any annotator can use either (see `SpanFinder`).
+A `SpanFinder` gives the spans of a transcript's messages, so any annotator
+can use any of them. `find_spans` makes one from two choices: which text
+parts to read (by role and kind of part, as in `text_parts`), and a
+`Splitter` that splits each part's text into spans: `paragraphs`, `tokens()`
+or `whole`.
 
 The paragraph splitter matches the reference project's (split on
 `PARAGRAPH_BREAK`, strip each piece, drop empty ones), but gives each
@@ -11,13 +14,20 @@ paragraph's code-point range in its text rather than a copy of the paragraph.
 import re
 from collections.abc import Callable, Collection, Sequence
 from itertools import pairwise
-from typing import NamedTuple, get_args
+from typing import NamedTuple
 
 import tiktoken
 
 from inspect_ai.model import ChatMessage
 
-from .annotations import REASONING, ContentType, TextRange, describe_part, text_parts
+from .annotations import (
+    ContentType,
+    Role,
+    TextRange,
+    check_selection,
+    describe_part,
+    text_parts,
+)
 
 PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 """A blank line, which may hold other whitespace, ends a paragraph."""
@@ -35,6 +45,46 @@ class Span(NamedTuple):
 
 SpanFinder = Callable[[Sequence[ChatMessage]], list[Span]]
 """Gives the spans of a transcript's messages, in transcript order."""
+
+Splitter = Callable[[str], list[TextRange]]
+"""Gives the spans of one text, as ascending, non-overlapping, non-empty ranges."""
+
+
+def find_spans(
+    split: Splitter,
+    roles: Collection[Role] | None = None,
+    content: Collection[ContentType] = ("reasoning", "text"),
+) -> SpanFinder:
+    """A span finder that splits each selected text part of the messages.
+
+    For example, `find_spans(paragraphs, roles=["assistant"],
+    content=["reasoning"])` gives the paragraphs of the assistant messages'
+    reasoning, and `find_spans(tokens())` the tokens of every text.
+
+    Args:
+        split: Splits the text of one part into spans.
+        roles: Roles of the messages to read, or None for every role.
+        content: Kinds of part to read (every kind by default).
+
+    Raises:
+        TypeError: If `roles` or `content` is a string rather than a
+            collection of them.
+        ValueError: If `roles` or `content` names an unknown role or kind of
+            part. The span finder raises `ValueError` if a message with text
+            has no id or the same id as an earlier one.
+    """
+    check_selection(roles, content)
+    selected_roles = None if roles is None else list(roles)
+    selected_content = list(content)
+
+    def spans(messages: Sequence[ChatMessage]) -> list[Span]:
+        return [
+            Span(part.message_id, part.content_index, start, end)
+            for part in text_parts(messages, selected_roles, selected_content)
+            for start, end in split(part.text)
+        ]
+
+    return spans
 
 
 def span_texts(spans: Sequence[Span], messages: Sequence[ChatMessage]) -> list[str]:
@@ -76,8 +126,8 @@ def check_paragraph(text: str, start: int, end: int) -> None:
         raise ValueError(f"Paragraph [{start}, {end}) starts or ends with whitespace")
 
 
-def paragraph_ranges(text: str) -> list[TextRange]:
-    """Where each paragraph of `text` lies in it.
+def paragraphs(text: str) -> list[TextRange]:
+    """Where each paragraph of `text` lies in it: a `Splitter`.
 
     Gives the same paragraphs as splitting `text` on `PARAGRAPH_BREAK`,
     stripping each piece and dropping empty ones, but as ranges of `text`.
@@ -100,43 +150,6 @@ def paragraph_ranges(text: str) -> list[TextRange]:
             raise ValueError(f"Paragraph [{start}, {end}) overlaps the one before")
         previous_end = end
     return ranges
-
-
-def paragraph_spans(
-    messages: Sequence[ChatMessage],
-    content_types: Collection[ContentType] = REASONING,
-) -> list[Span]:
-    """The paragraphs of the assistant messages, in transcript order.
-
-    Each of the assistant messages' `text_parts` of the given types is split
-    with `paragraph_ranges`. Other roles' messages are not split.
-
-    Args:
-        messages: Messages of the transcript.
-        content_types: Kinds of part to split (reasoning only by default).
-
-    Raises:
-        ValueError: If `content_types` names an unknown kind of part, or a
-            message with text has no id or the same id as an earlier one.
-    """
-    check_content_types(content_types)
-    return [
-        Span(part.message_id, part.content_index, start, end)
-        for part in text_parts(messages)
-        if part.role == "assistant" and part.content_type in content_types
-        for start, end in paragraph_ranges(part.text)
-    ]
-
-
-def check_content_types(content_types: Collection[str]) -> None:
-    """Check that every content type is one of `ContentType`.
-
-    Raises:
-        ValueError: If one isn't.
-    """
-    unknown = set(content_types) - set(get_args(ContentType))
-    if unknown:
-        raise ValueError(f"Unknown content types: {sorted(unknown)}")
 
 
 def check_covers(text: str, offsets: Sequence[TextRange]) -> None:
@@ -163,54 +176,41 @@ def check_covers(text: str, offsets: Sequence[TextRange]) -> None:
         )
 
 
-def token_offsets(text: str, encoding: str = "o200k_base") -> list[TextRange]:
-    """Where each token of `text` lies in it, using a tiktoken encoding.
+def tokens(encoding: str = "o200k_base") -> Splitter:
+    """A `Splitter` that gives where each token of a text lies in it.
 
     tiktoken gives each token the offset of the character its first byte
     belongs to, so when one character is split over several tokens, those
     tokens share a start. They are merged into one token, so that no token
     is empty. Special-token text such as "<|endoftext|>" is encoded as
-    ordinary text.
+    ordinary text. The splitter raises `ValueError` if the tokens don't
+    decode to the text (e.g. it has lone surrogates) or don't cover it
+    exactly.
 
     Args:
-        text: Text to tokenise.
         encoding: Name of the tiktoken encoding.
 
     Raises:
-        ValueError: If the tokens don't decode to `text` (e.g. it has lone
-            surrogates) or don't cover it exactly.
+        ValueError: If tiktoken has no encoding of that name.
     """
     tokenizer = tiktoken.get_encoding(encoding)
-    decoded, starts = tokenizer.decode_with_offsets(
-        tokenizer.encode(text, disallowed_special=())
-    )
-    if decoded != text:
-        raise ValueError(
-            f"Tokens of a text of length {len(text)} decode to a different text"
+
+    def split_tokens(text: str) -> list[TextRange]:
+        decoded, starts = tokenizer.decode_with_offsets(
+            tokenizer.encode(text, disallowed_special=())
         )
-    bounds = [*dict.fromkeys(starts), len(text)]
-    offsets = [TextRange(start, end) for start, end in pairwise(bounds)]
-    check_covers(text, offsets)
-    return offsets
+        if decoded != text:
+            raise ValueError(
+                f"Tokens of a text of length {len(text)} decode to a different text"
+            )
+        bounds = [*dict.fromkeys(starts), len(text)]
+        offsets = [TextRange(start, end) for start, end in pairwise(bounds)]
+        check_covers(text, offsets)
+        return offsets
+
+    return split_tokens
 
 
-def token_spans(
-    messages: Sequence[ChatMessage], encoding: str = "o200k_base"
-) -> list[Span]:
-    """The tokens of every message's `text_parts`, in transcript order.
-
-    Each part is tokenised with `token_offsets`, so its tokens cover its text.
-
-    Args:
-        messages: Messages of the transcript.
-        encoding: Name of the tiktoken encoding.
-
-    Raises:
-        ValueError: If a message with text has no id or the same id as an
-            earlier one, or a part's tokens don't cover its text.
-    """
-    return [
-        Span(part.message_id, part.content_index, start, end)
-        for part in text_parts(messages)
-        for start, end in token_offsets(part.text, encoding)
-    ]
+def whole(text: str) -> list[TextRange]:
+    """The whole text as one span (none for an empty text): a `Splitter`."""
+    return [TextRange(0, len(text))] if text else []
