@@ -76,22 +76,14 @@ export const ticks = ([lo, hi]: Domain, count = kTickCount): number[] => {
   );
 };
 
-/** Moves values between two axes' units, so one plot can draw a second
- *  axis's values against the first's scale. */
-export interface LinearMap {
-  /** A value of the source axis, in the target axis's units. */
-  forward: (value: number) => number;
-  /** A value of the target axis, in the source axis's units. */
-  inverse: (value: number) => number;
-}
+/** Takes a value on one axis to where it is on another, so one plot can
+ *  draw several axes' values against a single scale. */
+export type LinearMap = (value: number) => number;
 
 /** The linear map taking `from`'s ends to `to`'s. */
 export const linearMap = (from: Domain, to: Domain): LinearMap => {
   const [a0, a1] = from;
   const [b0, b1] = to;
   const scale = (b1 - b0) / (a1 - a0);
-  return {
-    forward: (value) => b0 + (value - a0) * scale,
-    inverse: (value) => a0 + (value - b0) / scale,
-  };
+  return (value) => b0 + (value - a0) * scale;
 };

@@ -37,15 +37,7 @@
 }
 
 .lineSwatch {
-  display: inline-block;
-  width: 1.1rem;
-  height: 2px;
-}
-
-.dashSwatch {
-  display: inline-block;
-  width: 1.1rem;
-  border-top: 2px dashed;
+  flex: none;
 }
 
 /* A vertical rule, as markers and message starts are drawn. */
@@ -100,10 +92,30 @@
 
 .controls {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.controlRow {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem 1rem;
-  font-size: var(--inspect-font-size-smaller);
+}
+
+/* One row per series, its controls in columns. */
+.seriesRows {
+  display: grid;
+  grid-template-columns: repeat(7, auto);
+  justify-content: start;
+  align-items: center;
+  gap: 0.3rem 0.8rem;
+}
+
+.seriesRow {
+  display: contents;
 }
 
 .control {
@@ -129,4 +141,22 @@
 
 .number {
   width: 4.5rem;
+}
+
+/* Wide enough for a long set name and the field after it. */
+.select.fieldSelect {
+  max-width: 30rem;
+}
+
+.button {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--inspect-input-border);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--inspect-input-background);
+  color: var(--inspect-input-foreground);
+  font-size: var(--inspect-font-size-smaller);
+}
+
+.button:disabled {
+  opacity: 0.5;
 }

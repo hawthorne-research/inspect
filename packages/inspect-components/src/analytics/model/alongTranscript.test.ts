@@ -4,9 +4,13 @@ import { setId } from "../../chat/annotations/model";
 
 import {
   alongTranscript,
+  axisName,
   defaultParams,
+  kPlotDomain,
+  normalizeAxes,
   resolveParams,
   type AlongTranscriptParams,
+  type AxisParams,
   type Panel,
   type SeriesParams,
 } from "./alongTranscript";
@@ -30,16 +34,21 @@ const series = (
   field,
   aggregation: "mean",
   reference: null,
-  min: null,
-  max: null,
+  axis: 0,
   ...overrides,
 });
+
+const fitted: AxisParams = { min: null, max: null };
 
 const params = (
   overrides: Partial<AlongTranscriptParams> = {}
 ): AlongTranscriptParams => ({
   x: "P(eval)",
-  series: [series("P(eval)", "p_eval"), series("monitor", "log10_p")],
+  series: [
+    series("P(eval)", "p_eval"),
+    series("monitor", "log10_p", { axis: 1 }),
+  ],
+  axes: [fitted, fitted],
   marker: { set: "confidence", field: "confidence" },
   messageBoundaries: true,
   groupBy: "outcome",
@@ -215,40 +224,38 @@ describe("alongTranscript", () => {
     ).toEqual([]);
   });
 
-  it("gives each series a nice domain shared by every panel, with its reference", () => {
+  it("gives each axis a nice domain shared by every panel, with its series' references", () => {
     const view = alongTranscript(
       table,
       samples,
       params({
         series: [
           series("P(eval)", "p_eval", { reference: 0.5 }),
-          series("monitor", "log10_p", { reference: -20 }),
+          series("monitor", "log10_p", { reference: -20, axis: 1 }),
         ],
       })
     );
-    expect(view.series.map((s) => s.domain)).toEqual([
+    expect(view.axes.map((a) => a.domain)).toEqual([
       [0.2, 0.9],
       [-20, 0],
     ]);
-    expect(view.yDomain).toEqual([0.2, 0.9]);
   });
 
-  it("fixes the axis ends a series sets, and fits the others to the data", () => {
+  it("fixes the axis ends an axis sets, and fits the others to the data", () => {
     const view = alongTranscript(
       table,
       samples,
       params({
-        series: [
-          series("P(eval)", "p_eval", { min: 0, max: 1 }),
-          series("monitor", "log10_p", { max: 5 }),
+        axes: [
+          { min: 0, max: 1 },
+          { min: null, max: 5 },
         ],
       })
     );
-    expect(view.series.map((s) => s.domain)).toEqual([
+    expect(view.axes.map((a) => a.domain)).toEqual([
       [0, 1],
       [-12, 5],
     ]);
-    expect(view.yDomain).toEqual([0, 1]);
   });
 
   it("ignores fixed ends that leave no range", () => {
@@ -257,40 +264,113 @@ describe("alongTranscript", () => {
       table,
       samples,
       params({
-        series: [
-          series("P(eval)", "p_eval", { min: 1, max: 0 }),
-          series("monitor", "log10_p", { min: 50 }),
+        axes: [
+          { min: 1, max: 0 },
+          { min: 50, max: null },
         ],
       })
     );
-    expect(view.series.map((s) => s.domain)).toEqual(
-      fitted.series.map((s) => s.domain)
+    expect(view.axes.map((a) => a.domain)).toEqual(
+      fitted.axes.map((a) => a.domain)
     );
   });
 
-  it("maps the second series onto the first series' axis, and back", () => {
-    const view = alongTranscript(table, samples, params());
-    const [left, right] = view.series;
-    const map = view.rightAxis;
-    if (!left || !right || !map) throw new Error("expected two series");
-    expect(map.forward(right.domain[0])).toBeCloseTo(left.domain[0], 10);
-    expect(map.forward(right.domain[1])).toBeCloseTo(left.domain[1], 10);
-    for (const value of [-12, -6, -3, right.ticks[1] ?? 0]) {
-      expect(map.inverse(map.forward(value))).toBeCloseTo(value, 10);
-    }
-    const single = alongTranscript(
+  it("draws any number of series, on the left axis and then outwards on the right", () => {
+    const view = alongTranscript(
       table,
       samples,
-      params({ series: [series("P(eval)", "p_eval")] })
+      params({
+        series: [
+          series("P(eval)", "p_eval"),
+          series("monitor", "log10_p", { axis: 1 }),
+          series("probes", "deception", { axis: 2 }),
+          series("probes", "deception", { aggregation: "max", axis: 2 }),
+        ],
+        axes: [fitted, fitted, fitted],
+      })
     );
-    expect(single.rightAxis).toBeNull();
+    expect(panels(view)[0]?.points.map((p) => p.values)).toEqual([
+      [0.2, -12, 2, 3],
+      [0.6, -6, 1, 4],
+      [0.9, -3, 15, 20],
+    ]);
+    expect(
+      view.axes.map(({ name, side, position, series, label }) => ({
+        name,
+        side,
+        position,
+        series,
+        label,
+      }))
+    ).toEqual([
+      { name: "left", side: "left", position: 0, series: [0], label: "p_eval" },
+      {
+        name: "right",
+        side: "right",
+        position: 0,
+        series: [1],
+        label: "log10_p",
+      },
+      {
+        name: "outer right",
+        side: "right",
+        position: 1,
+        series: [2, 3],
+        label: "deception",
+      },
+    ]);
+    // The shared axis covers both series: the means from 1 and the maxima
+    // up to 20.
+    expect(view.axes[2]?.domain).toEqual([0, 20]);
+  });
+
+  it("labels a shared axis with its series' field names", () => {
+    const view = alongTranscript(
+      table,
+      samples,
+      params({
+        series: [
+          series("P(eval)", "p_eval", { reference: 2 }),
+          series("monitor", "log10_p"),
+        ],
+        axes: [fitted],
+      })
+    );
+    expect(view.axes).toHaveLength(1);
+    expect(view.axes[0]?.label).toBe("p_eval, log10_p");
+    expect(view.axes[0]?.domain).toEqual([-12, 2]);
+  });
+
+  it("maps every axis onto the plot's y scale", () => {
+    const view = alongTranscript(table, samples, params());
+    const [lo, hi] = kPlotDomain;
+    for (const axis of view.axes) {
+      expect(axis.toPlot(axis.domain[0])).toBeCloseTo(lo, 10);
+      expect(axis.toPlot(axis.domain[1])).toBeCloseTo(hi, 10);
+    }
+    expect(view.axes[1]?.toPlot(-7)).toBeCloseTo(0.5, 10);
+  });
+
+  it("renumbers axes the parameters leave gaps in", () => {
+    const view = alongTranscript(
+      table,
+      samples,
+      params({
+        series: [
+          series("P(eval)", "p_eval", { axis: 2 }),
+          series("monitor", "log10_p", { axis: 2 }),
+        ],
+      })
+    );
+    expect(view.params.series.map((s) => s.axis)).toEqual([0, 0]);
+    expect(view.axes).toHaveLength(1);
   });
 
   it("has no panels when no sample has the x set", () => {
     const view = alongTranscript(
       table,
       samples,
-      params({ x: "gone", series: [], marker: null })
+      params({ x: "gone", series: [], axes: [], marker: null })
     );
     expect(panels(view)).toEqual([]);
     expect(view.omitted).toBe(4);
@@ -306,6 +386,7 @@ describe("defaultParams", () => {
     expect(defaultParams(table, samples)).toEqual({
       x: "P(eval)",
       series: [series("P(eval)", "p_eval")],
+      axes: [fitted],
       marker: { set: "confidence", field: "confidence" },
       messageBoundaries: true,
       groupBy: "outcome",
@@ -323,6 +404,55 @@ describe("defaultParams", () => {
   });
 });
 
+describe("axisName", () => {
+  it("names the left axis, then the right axes outwards", () => {
+    expect([0, 1, 2, 3, 4].map(axisName)).toEqual([
+      "left",
+      "right",
+      "outer right",
+      "outer right 2",
+      "outer right 3",
+    ]);
+  });
+});
+
+describe("normalizeAxes", () => {
+  const axis = (min: number): AxisParams => ({ min, max: null });
+  const onAxes = (...axes: number[]) =>
+    axes.map((a) => series("P(eval)", "p_eval", { axis: a }));
+
+  it("numbers axes in order of first use, keeping each axis's ends", () => {
+    const normalized = normalizeAxes({
+      series: onAxes(3, 3, 1, 0),
+      axes: [axis(0), axis(1), axis(2), axis(3)],
+    });
+    expect(normalized.series.map((s) => s.axis)).toEqual([0, 0, 1, 2]);
+    expect(normalized.axes).toEqual([axis(3), axis(1), axis(0)]);
+  });
+
+  it("fits an axis without ends and drops axes no series uses", () => {
+    const normalized = normalizeAxes({
+      series: onAxes(0, 5),
+      axes: [axis(0), axis(1)],
+    });
+    expect(normalized.series.map((s) => s.axis)).toEqual([0, 1]);
+    expect(normalized.axes).toEqual([axis(0), fitted]);
+  });
+
+  it("renumbers the axes after a series is removed", () => {
+    const { series: all, axes } = normalizeAxes({
+      series: onAxes(0, 1, 2, 2),
+      axes: [axis(0), axis(1), axis(2)],
+    });
+    const normalized = normalizeAxes({
+      series: all.filter((_, i) => i !== 1),
+      axes,
+    });
+    expect(normalized.series.map((s) => s.axis)).toEqual([0, 1, 1]);
+    expect(normalized.axes).toEqual([axis(0), axis(2)]);
+  });
+});
+
 describe("resolveParams", () => {
   const { table, samples } = fixtureTable([full(1, "grader")]);
   const defaults = defaultParams(table, samples);
@@ -332,8 +462,13 @@ describe("resolveParams", () => {
     expect(resolveParams(stored, table, samples)).toEqual(stored);
   });
 
-  it("keeps an explicit choice of no markers or grouping", () => {
-    const stored = params({ marker: null, groupBy: null, series: [] });
+  it("keeps an explicit choice of no markers, grouping or series", () => {
+    const stored = params({
+      marker: null,
+      groupBy: null,
+      series: [],
+      axes: [],
+    });
     expect(resolveParams(stored, table, samples)).toEqual(stored);
   });
 
@@ -353,22 +488,79 @@ describe("resolveParams", () => {
     expect(resolved).toEqual(defaults);
   });
 
-  it("reads stored series without axis ends as fitting both ends", () => {
-    const stored = params();
+  it("puts each series stored before axes existed on its own axis, with its ends", () => {
+    const { axes: _axes, ...stored } = params();
     const older = {
       ...stored,
-      series: stored.series.map(({ min: _min, max: _max, ...rest }) => rest),
+      series: [
+        { ...series("P(eval)", "p_eval"), axis: undefined, min: 0, max: 1 },
+        { ...series("monitor", "log10_p"), axis: undefined },
+        { ...series("monitor", "log10_p"), axis: undefined, max: 5 },
+      ],
     };
-    expect(resolveParams(older, table, samples)).toEqual(stored);
+    expect(resolveParams(older, table, samples)).toEqual(
+      params({
+        series: [
+          series("P(eval)", "p_eval"),
+          series("monitor", "log10_p", { axis: 1 }),
+          series("monitor", "log10_p", { axis: 2 }),
+        ],
+        axes: [{ min: 0, max: 1 }, fitted, { min: null, max: 5 }],
+      })
+    );
   });
 
-  it("rejects stored axis ends that aren't numbers", () => {
-    const stored = params();
-    const bad = {
+  it("renumbers stored axes in order of first use and fits missing ones", () => {
+    const stored = params({
+      series: [
+        series("P(eval)", "p_eval", { axis: 2 }),
+        series("monitor", "log10_p", { axis: 2 }),
+        series("monitor", "log10_p", { axis: 0 }),
+        series("monitor", "log10_p", { axis: 4 }),
+      ],
+      axes: [
+        { min: 0, max: null },
+        { min: 1, max: null },
+        { min: 2, max: null },
+      ],
+    });
+    expect(resolveParams(stored, table, samples)).toEqual({
       ...stored,
-      series: stored.series.map((s) => ({ ...s, min: "0" })),
-    };
-    expect(resolveParams(bad, table, samples)).toEqual(defaults);
+      series: [
+        series("P(eval)", "p_eval", { axis: 0 }),
+        series("monitor", "log10_p", { axis: 0 }),
+        series("monitor", "log10_p", { axis: 1 }),
+        series("monitor", "log10_p", { axis: 2 }),
+      ],
+      axes: [{ min: 2, max: null }, { min: 0, max: null }, fitted],
+    });
+  });
+
+  it.each([
+    [
+      "a stored axis end that isn't a number",
+      { axes: [{ min: "0", max: null }, fitted] },
+    ],
+    [
+      "an axis end of the old shape that isn't a number",
+      {
+        axes: undefined,
+        series: [{ ...series("P(eval)", "p_eval"), axis: undefined, min: "0" }],
+      },
+    ],
+    ["axes that aren't a list", { axes: { min: 0 } }],
+    [
+      "a series axis that isn't an index",
+      { series: [series("P(eval)", "p_eval", { axis: 1.5 })] },
+    ],
+    [
+      "a series without an axis",
+      { series: [{ ...series("P(eval)", "p_eval"), axis: undefined }] },
+    ],
+  ])("takes the default series and axes for %s", (_, changes) => {
+    const resolved = resolveParams({ ...params(), ...changes }, table, samples);
+    expect(resolved.series).toEqual(defaults.series);
+    expect(resolved.axes).toEqual(defaults.axes);
   });
 
   it("uses the defaults for nothing stored", () => {

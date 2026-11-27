@@ -55,19 +55,31 @@ export interface SeriesParams extends FieldRef {
   aggregation: Aggregation;
   /** Where to draw a dashed reference line on the series' axis. */
   reference: number | null;
-  /** Fixed ends of the series' axis; null fits that end to the data. */
+  /** The 0-based index of the series' axis in `axes`. */
+  axis: number;
+}
+
+/** A y axis that one or more series are drawn on. */
+export interface AxisParams {
+  /** Fixed ends of the axis; null fits that end to its series' values. */
   min: number | null;
   max: number | null;
 }
 
+/** The series and their axes: one entry of `axes` per axis in use, in
+ *  order of first use by the series (`normalizeAxes`). The first axis is on
+ *  the left, the others on the right, each further out than the one
+ *  before. */
+export interface SeriesAndAxes {
+  series: readonly SeriesParams[];
+  axes: readonly AxisParams[];
+}
+
 /** The parameters of the "along the transcript" view. */
-export interface AlongTranscriptParams {
+export interface AlongTranscriptParams extends SeriesAndAxes {
   /** The annotation set whose spans make the x axis: a sample's k-th span
    *  is at x = k. */
   x: string;
-  /** At most two numeric fields: the first on the left axis, the second on
-   *  its own axis on the right. */
-  series: readonly SeriesParams[];
   /** A categorical field: a vertical rule marks each span whose option is
    *  not one of its negative options. */
   marker: FieldRef | null;
@@ -78,7 +90,6 @@ export interface AlongTranscriptParams {
   columns: number;
 }
 
-export const kMaxSeries = 2;
 export const kMaxColumns = 4;
 export const kAggregations: readonly Aggregation[] = [
   "mean",
@@ -129,29 +140,46 @@ export interface PanelGroup {
   panels: readonly Panel[];
 }
 
-/** A series with its axis, shared by every panel. */
-export interface SeriesAxis extends SeriesParams {
+export interface Series extends SeriesParams {
   label: string;
   /** The field's set has other spans than the x set, so its values are
    *  rolled up onto the x set's spans with `aggregation`. */
   rolledUp: boolean;
+}
+
+/** A y axis, shared by every panel. */
+export interface YAxis {
+  /** Where it is in `AlongTranscript.axes`. */
+  index: number;
+  /** "left", "right", "outer right", ... (`axisName`). */
+  name: string;
+  side: "left" | "right";
+  /** 0 for the axis beside the plot on its side, 1 for the axis outside
+   *  that, and so on. */
+  position: number;
+  /** The field names of its series, without repeats. */
+  label: string;
+  /** Indices of its series in `AlongTranscript.series`. */
+  series: readonly number[];
   domain: Domain;
   ticks: readonly number[];
+  /** Takes a value on this axis to the plot's y scale, whose domain is
+   *  `kPlotDomain`. */
+  toPlot: LinearMap;
 }
 
 export interface AlongTranscript {
+  /** `normalizeAxes` of the parameters given. */
   params: AlongTranscriptParams;
   /** What one x span is called, e.g. "paragraph" (`spanNoun` of the x
    *  set's unit). */
   spanNoun: string;
   groups: readonly PanelGroup[];
-  /** The left axis's series first. */
-  series: readonly SeriesAxis[];
-  /** Takes the second series' values onto the first series' axis, which is
-   *  the plot's y scale; null without a second series. */
-  rightAxis: LinearMap | null;
-  /** The plot's y domain. */
-  yDomain: Domain;
+  /** In the parameters' order. */
+  series: readonly Series[];
+  /** In the parameters' order: the left axis, then the right axes from the
+   *  plot outwards. */
+  axes: readonly YAxis[];
   marker: { label: string; field: CategoricalField } | null;
   /** Samples without every chosen set, which have no panel. */
   omitted: number;
@@ -164,7 +192,8 @@ export interface AlongTranscript {
  * x set's spans directly when the sets have the same spans
  * (`alignSets`) and are rolled up onto them otherwise (`rollUp`). Panels
  * are grouped by their `groupBy` score's value and ordered by sample id and
- * epoch; series axes are shared across panels.
+ * epoch; axes are shared across panels, and each is fitted to all its
+ * series' values and references unless its ends are fixed.
  *
  * Throws as `alignSets` and `rollUp` do, e.g. when a sample has two
  * spans of a chosen set at the same position.
@@ -172,9 +201,10 @@ export interface AlongTranscript {
 export const alongTranscript = (
   table: SpanTable,
   samples: readonly AnalyticsSample[],
-  params: AlongTranscriptParams
+  given: AlongTranscriptParams
 ): AlongTranscript => {
-  const series = params.series.slice(0, kMaxSeries);
+  const params = { ...given, ...normalizeAxes(given) };
+  const { series } = params;
   const chosen = new Set([
     params.x,
     ...series.map((s) => s.set),
@@ -271,25 +301,39 @@ export const alongTranscript = (
     };
   });
 
-  const axes = series.map((s, i): SeriesAxis => {
-    const values: number[] = s.reference === null ? [] : [s.reference];
-    for (const panel of panels) {
-      for (const point of panel.points) {
-        const value = point.values[i];
-        if (value !== null && value !== undefined) values.push(value);
+  const axes = params.axes.map((axis, index): YAxis => {
+    const members = series.flatMap((s, i) => (s.axis === index ? [i] : []));
+    const fields = new Set<string>();
+    const values: number[] = [];
+    for (const i of members) {
+      const s = series[i];
+      if (s === undefined) continue;
+      fields.add(s.field);
+      if (s.reference !== null) values.push(s.reference);
+      for (const panel of panels) {
+        for (const point of panel.points) {
+          const value = point.values[i];
+          if (value !== null && value !== undefined) values.push(value);
+        }
       }
     }
-    const domain = fixEnds(niceDomain(extent(values) ?? [0, 1]), s.min, s.max);
-    const rolledUp = !aligned.has(s.set);
+    const domain = fixEnds(
+      niceDomain(extent(values) ?? [0, 1]),
+      axis.min,
+      axis.max
+    );
     return {
-      ...s,
-      label: `${s.set} · ${s.field}${rolledUp ? ` (${s.aggregation} per ${noun})` : ""}`,
-      rolledUp,
+      index,
+      name: axisName(index),
+      side: index === 0 ? "left" : "right",
+      position: Math.max(0, index - 1),
+      label: [...fields].join(", "),
+      series: members,
       domain,
       ticks: ticks(domain),
+      toPlot: linearMap(domain, kPlotDomain),
     };
   });
-  const [left, right] = axes;
 
   return {
     params,
@@ -298,9 +342,15 @@ export const alongTranscript = (
       params.groupBy === null
         ? [{ value: null, panels }]
         : groupPanels(panels, params.groupBy),
-    series: axes,
-    rightAxis: left && right ? linearMap(right.domain, left.domain) : null,
-    yDomain: left?.domain ?? [0, 1],
+    series: series.map((s): Series => {
+      const rolledUp = !aligned.has(s.set);
+      return {
+        ...s,
+        label: `${s.set} · ${s.field}${rolledUp ? ` (${s.aggregation} per ${noun})` : ""}`,
+        rolledUp,
+      };
+    }),
+    axes,
     marker:
       params.marker && markerField
         ? {
@@ -309,6 +359,48 @@ export const alongTranscript = (
           }
         : null,
     omitted: samples.length - shown.length,
+  };
+};
+
+/** The y scale's domain in plot units, which every axis maps onto. */
+export const kPlotDomain: Domain = [0, 1];
+
+/** The name of the axis at `index`: "left" for the first, then "right",
+ *  "outer right", "outer right 2", and so on outwards. */
+export const axisName = (index: number): string =>
+  index <= 0
+    ? "left"
+    : index === 1
+      ? "right"
+      : index === 2
+        ? "outer right"
+        : `outer right ${index - 1}`;
+
+const kFittedAxis: AxisParams = { min: null, max: null };
+
+/**
+ * `params` with the axes renumbered 0, 1, ... in order of first use by the
+ * series, so a series is on an axis an earlier series uses or on the next
+ * new one, and with one entry of `axes` per axis in use: an axis keeps its
+ * entry, or fits both ends when it has none. Run after any change to the
+ * series or their axes, e.g. removing a series.
+ */
+export const normalizeAxes = ({
+  series,
+  axes,
+}: SeriesAndAxes): {
+  series: SeriesParams[];
+  axes: AxisParams[];
+} => {
+  const renumbered = new Map<number, number>();
+  const next = series.map((s): SeriesParams => {
+    const axis = renumbered.get(s.axis) ?? renumbered.size;
+    renumbered.set(s.axis, axis);
+    return { ...s, axis };
+  });
+  return {
+    series: next,
+    axes: [...renumbered.keys()].map((old) => axes[old] ?? kFittedAxis),
   };
 };
 
@@ -519,11 +611,11 @@ export const defaultParams = (
               field,
               aggregation: "mean",
               reference: null,
-              min: null,
-              max: null,
+              axis: 0,
             },
           ]
         : [],
+    axes: x && field !== undefined ? [kFittedAxis] : [],
     marker:
       markerSet && markerField !== undefined
         ? { set: markerSet.name, field: markerField }
@@ -537,7 +629,10 @@ export const defaultParams = (
 /**
  * `stored` parameters (e.g. remembered from another log) checked against
  * `table` and `samples`: each that names a set, field or score they
- * don't have, or is malformed, takes its value from `defaultParams`.
+ * don't have, or is malformed, takes its value from `defaultParams`. The
+ * series and axes are one value, normalized (`normalizeAxes`). Series
+ * stored before axes existed have no `axis` and their own `min` and `max`:
+ * series i is on axis i, with those ends.
  */
 export const resolveParams = (
   stored: unknown,
@@ -548,13 +643,14 @@ export const resolveParams = (
   const fallback = () => (defaults ??= defaultParams(table, samples));
   if (!isRecord(stored)) return fallback();
   const sets = new Map(table.sets.map((set) => [set.name, set]));
-  const { x, series, marker, messageBoundaries, groupBy, columns } = stored;
-  const parsedSeries = parseSeries(series, sets);
+  const { x, series, axes, marker, messageBoundaries, groupBy, columns } =
+    stored;
+  const parsedSeries = parseSeries(series, axes, sets);
   const parsedMarker =
     marker === null ? null : parseFieldRef(marker, sets, "categorical");
   return {
     x: typeof x === "string" && sets.has(x) ? x : fallback().x,
-    series: parsedSeries ?? fallback().series,
+    ...(parsedSeries ?? { series: fallback().series, axes: fallback().axes }),
     marker: parsedMarker === undefined ? fallback().marker : parsedMarker,
     messageBoundaries:
       typeof messageBoundaries === "boolean"
@@ -611,12 +707,37 @@ const fixEnds = (
 const isAggregation = (value: unknown): value is Aggregation =>
   kAggregations.some((aggregation) => aggregation === value);
 
-/** Undefined unless every entry is a valid series. */
+/** Undefined unless `raw` has a valid `min` and `max`; a missing end
+ *  fits the data. */
+const parseAxis = (raw: unknown): AxisParams | undefined => {
+  if (!isRecord(raw)) return undefined;
+  const min = optionalNumber(raw["min"]);
+  const max = optionalNumber(raw["max"]);
+  return min === undefined || max === undefined ? undefined : { min, max };
+};
+
+const isAxisIndex = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+/** Undefined unless every entry is a valid series and, when `rawAxes` is
+ *  stored, every axis is valid. Without `rawAxes`, the series are of the
+ *  shape stored before axes existed. */
 const parseSeries = (
   raw: unknown,
+  rawAxes: unknown,
   sets: ReadonlyMap<string, SetInfo>
-): SeriesParams[] | undefined => {
-  if (!Array.isArray(raw) || raw.length > kMaxSeries) return undefined;
+): SeriesAndAxes | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const hasAxes = rawAxes !== undefined;
+  const axes: AxisParams[] = [];
+  if (hasAxes) {
+    if (!Array.isArray(rawAxes)) return undefined;
+    for (const entry of rawAxes) {
+      const axis = parseAxis(entry);
+      if (!axis) return undefined;
+      axes.push(axis);
+    }
+  }
   const series: SeriesParams[] = [];
   for (const entry of raw) {
     const ref = parseFieldRef(entry, sets, "numeric");
@@ -625,12 +746,16 @@ const parseSeries = (
     if (!isAggregation(aggregation)) return undefined;
     // Settings stored before an option existed lack it: read that as null.
     const reference = optionalNumber(entry["reference"]);
-    const min = optionalNumber(entry["min"]);
-    const max = optionalNumber(entry["max"]);
-    if (reference === undefined || min === undefined || max === undefined) {
-      return undefined;
+    if (reference === undefined) return undefined;
+    let axis = entry["axis"];
+    if (!hasAxes) {
+      const own = parseAxis(entry);
+      if (!own) return undefined;
+      axis = axes.length;
+      axes.push(own);
     }
-    series.push({ ...ref, aggregation, reference, min, max });
+    if (!isAxisIndex(axis)) return undefined;
+    series.push({ ...ref, aggregation, reference, axis });
   }
-  return series;
+  return normalizeAxes({ series, axes });
 };

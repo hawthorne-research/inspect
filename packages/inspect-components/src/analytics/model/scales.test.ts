@@ -49,12 +49,10 @@ describe("ticks", () => {
 });
 
 describe("linearMap", () => {
-  it("takes one domain's ends to the other's and back", () => {
+  it("takes one domain's ends to the other's", () => {
     const map = linearMap([-20, 0], [0, 1]);
-    expect(map.forward(-20)).toBe(0);
-    expect(map.forward(0)).toBe(1);
-    expect(map.forward(-5)).toBe(0.75);
-    expect(map.inverse(0.75)).toBe(-5);
-    expect(map.inverse(map.forward(-7.3))).toBeCloseTo(-7.3, 12);
+    expect(map(-20)).toBe(0);
+    expect(map(0)).toBe(1);
+    expect(map(-5)).toBe(0.75);
   });
 });

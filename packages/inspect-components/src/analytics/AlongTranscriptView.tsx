@@ -10,7 +10,12 @@ import {
 } from "../chat/annotations/model";
 
 import styles from "./AlongTranscript.module.css";
-import { markerColor, seriesColor } from "./colors";
+import {
+  kReferenceDash,
+  markerColor,
+  seriesStyle,
+  type LineStyle,
+} from "./colors";
 import type { AlongTranscript, Panel, PanelPoint } from "./model";
 
 const PanelPlot = lazy(() => import("./PanelPlot"));
@@ -123,32 +128,31 @@ const Legend: FC<{ view: AlongTranscript; palette: Palette }> = ({
   view,
   palette,
 }) => {
-  const { series, marker } = view;
+  const { series, axes, marker } = view;
   return (
     <ul className={styles.legend} aria-label="Legend">
-      {series.map((s, i) => (
-        <li key={s.label} className={styles.legendItem}>
-          <span
-            className={styles.lineSwatch}
-            style={{ backgroundColor: seriesColor(i, palette.dark) }}
-          />
-          {s.label}
-          {series.length > 1 ? (
-            <span className={styles.legendNote}>
-              {i === 0 ? "left axis" : "right axis"}
-            </span>
-          ) : null}
-          {s.reference === null ? null : (
-            <span className={styles.legendNote}>
-              <span
-                className={styles.dashSwatch}
-                style={{ borderColor: seriesColor(i, palette.dark) }}
-              />
-              {formatValue(s.reference)}
-            </span>
-          )}
-        </li>
-      ))}
+      {series.map((s, i) => {
+        const style = seriesStyle(i, palette.dark);
+        const axis = axes[s.axis];
+        return (
+          <li key={i} className={styles.legendItem}>
+            <LineSwatch style={style} strokeWidth={1.5} />
+            {s.label}
+            {axes.length > 1 && axis ? (
+              <span className={styles.legendNote}>{axis.name} axis</span>
+            ) : null}
+            {s.reference === null ? null : (
+              <span className={styles.legendNote}>
+                <LineSwatch
+                  style={{ color: style.color, dash: kReferenceDash }}
+                  strokeWidth={1}
+                />
+                {formatValue(s.reference)}
+              </span>
+            )}
+          </li>
+        );
+      })}
       {marker ? (
         <li className={styles.legendItem}>
           {marker.label}:
@@ -184,3 +188,21 @@ const Legend: FC<{ view: AlongTranscript; palette: Palette }> = ({
     </ul>
   );
 };
+
+/** A short line drawn as the plot draws a series or reference line. */
+const LineSwatch: FC<{ style: LineStyle; strokeWidth: number }> = ({
+  style,
+  strokeWidth,
+}) => (
+  <svg className={styles.lineSwatch} width={22} height={6} aria-hidden="true">
+    <line
+      x1={0}
+      y1={3}
+      x2={22}
+      y2={3}
+      stroke={style.color}
+      strokeWidth={strokeWidth}
+      strokeDasharray={style.dash}
+    />
+  </svg>
+);
