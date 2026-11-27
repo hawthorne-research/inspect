@@ -17,6 +17,8 @@ export interface VirtualListHandle {
     index: number;
     align?: "start" | "center" | "end";
     behavior?: "auto" | "smooth";
+    /** Runs once the jump settles, or, when a later scroll supersedes it,
+     *  once that one settles. */
     onDone?: () => void;
   }): void;
   scrollTo(opts: { top: number; behavior?: "auto" | "smooth" }): void;

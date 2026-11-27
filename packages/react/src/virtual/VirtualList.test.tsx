@@ -14,6 +14,7 @@ import {
   makeStateHooks,
 } from "../test/component-state-hooks";
 
+import type { VirtualListHandle } from "./types";
 import { VirtualList } from "./VirtualList";
 
 const Wrapper: React.FC<{
@@ -393,6 +394,63 @@ describe("VirtualList persist flush on unmount", () => {
     unmount();
     vi.advanceTimersByTime(50);
     expect(el.scrollTop).toBe(300);
+  });
+});
+
+describe("VirtualList scrollToIndex onDone", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const mountWithHandle = () => {
+    const scrollRef = createRef<HTMLDivElement>();
+    const handle = createRef<VirtualListHandle>();
+    render(
+      <Wrapper hooks={makeStateHooks()}>
+        <div ref={scrollRef}>
+          <VirtualList<string>
+            ref={handle}
+            persistenceKey="done-list"
+            scrollRef={scrollRef}
+            data={["a", "b", "c"]}
+            renderRow={(_index: number, item: string) => <div>{item}</div>}
+            live={false}
+          />
+        </div>
+      </Wrapper>
+    );
+    vi.advanceTimersByTime(50); // let the mount-time initial scroll settle
+    return handle.current!;
+  };
+
+  it("calls onDone once the jump settles", () => {
+    const handle = mountWithHandle();
+    const onDone = vi.fn();
+    handle.scrollToIndex({ index: 2, behavior: "auto", onDone });
+    expect(onDone).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls a superseded jump's onDone when the jump that superseded it settles", () => {
+    // The superseding settle cancels the first one's frames, so the first
+    // never finishes itself.
+    const handle = mountWithHandle();
+    const first = vi.fn();
+    const second = vi.fn();
+    handle.scrollToIndex({ index: 1, behavior: "auto", onDone: first });
+    handle.scrollToIndex({ index: 2, behavior: "auto", onDone: second });
+    expect(first).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1000);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+
+    handle.scrollToIndex({ index: 0, behavior: "auto" });
+    vi.advanceTimersByTime(1000);
+    expect(first).toHaveBeenCalledTimes(1);
   });
 });
 

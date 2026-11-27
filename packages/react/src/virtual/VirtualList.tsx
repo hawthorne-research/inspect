@@ -472,6 +472,16 @@ export function VirtualList<T>({
   // Re-fires scrollToIndex each frame to absorb external chrome shifts TanStack won't reconcile on its own; bounded, and real user input cancels it.
   const settleFrameRef = useRef(0);
   const releaseFrameRef = useRef(0);
+  // A settle that a later one supersedes (cancelling its frame) never
+  // finishes itself: its `onDone` waits here and runs when the next settle
+  // finishes, e.g. a host's jump overtaken by the mount-time deep-link
+  // landing, whose start re-renders can postpone.
+  const pendingDoneRef = useRef<(() => void)[]>([]);
+  const runPendingDone = useCallback(() => {
+    const pending = pendingDoneRef.current;
+    pendingDoneRef.current = [];
+    for (const done of pending) done();
+  }, []);
   const settleScrollToIndex = useCallback(
     (
       index: number,
@@ -485,13 +495,14 @@ export function VirtualList<T>({
       // can't flip the guard off mid-settle.
       isAutoScrollingRef.current = true;
       cancelAnimationFrame(releaseFrameRef.current);
+      if (onDone) pendingDoneRef.current.push(onDone);
       const finish = () => {
         const elNow = getScrollElement();
         if (elNow) lastAutoScrollTopRef.current = elNow.scrollTop;
         releaseFrameRef.current = requestAnimationFrame(() => {
           isAutoScrollingRef.current = false;
         });
-        onDone?.();
+        runPendingDone();
       };
       jump();
       const el = getScrollElement();
@@ -522,7 +533,7 @@ export function VirtualList<T>({
       };
       settleFrameRef.current = requestAnimationFrame(settle);
     },
-    [virtualizer, getScrollElement]
+    [virtualizer, getScrollElement, runPendingDone]
   );
   useUnmount(() => {
     cancelAnimationFrame(settleFrameRef.current);
@@ -557,6 +568,7 @@ export function VirtualList<T>({
         releaseFrameRef.current = requestAnimationFrame(() => {
           isAutoScrollingRef.current = false;
         });
+        runPendingDone();
       };
       if (!el) {
         finish();
@@ -598,7 +610,7 @@ export function VirtualList<T>({
       };
       settleFrameRef.current = requestAnimationFrame(settle);
     },
-    [getScrollElement]
+    [getScrollElement, runPendingDone]
   );
   const lastInitialIndexRef = useRef<number | undefined>(undefined);
   // The no-snapshot "reset to top" is a one-shot per (re)key: re-firing on
