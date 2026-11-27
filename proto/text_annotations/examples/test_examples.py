@@ -17,7 +17,7 @@ from inspect_ai.solver import TaskState
 
 from .. import (
     TEXT_ANNOTATIONS_KEY,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     Span,
     TextAnnotations,
@@ -73,8 +73,8 @@ def labels_of(question: CategoricalField, paragraph_count: int) -> list[str]:
     annotations = TextAnnotations.model_validate(
         (score.metadata or {})[TEXT_ANNOTATIONS_KEY]
     )
-    [layer] = annotations.layers
-    return [str(label) for label in layer.parts[0].values[question.name]]
+    [annotation_set] = annotations.sets
+    return [str(label) for label in annotation_set.parts[0].values[question.name]]
 
 
 @pytest.mark.parametrize(
@@ -175,17 +175,17 @@ def test_fake_probes_record_their_model_layer() -> None:
     ]
 
 
-def test_demo_log_has_both_layers(tmp_path: Path) -> None:
+def test_demo_log_has_both_annotation_sets(tmp_path: Path) -> None:
     output = tmp_path / "demo.eval"
     make_demo(output)
     [sample] = read_eval_log(str(output)).samples or []
-    layers: dict[str, AnnotationLayer] = {
+    sets: dict[str, AnnotationSet] = {
         name: TextAnnotations.model_validate(
             (score.metadata or {})[TEXT_ANNOTATIONS_KEY]
-        ).layers[0]
+        ).sets[0]
         for name, score in (sample.scores or {}).items()
     }
-    labels, values = layers["paragraph_labels"], layers["probe_values"]
+    labels, values = sets["paragraph_labels"], sets["probe_values"]
     assert labels.unit == "paragraph" and labels.span_count() == 9
     shortcut = [
         label

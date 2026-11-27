@@ -41,16 +41,16 @@ from .. import (
     ANNOTATION_METRICS,
     PARAGRAPH_BREAK,
     TEXT_ANNOTATIONS_KEY,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     Span,
     TextAnnotations,
     binary_question,
     classifier_annotator,
     find_spans,
-    layer_texts,
     paragraphs,
     probe_annotator,
+    set_texts,
     text_annotations,
     text_parts,
     tokens,
@@ -64,11 +64,11 @@ PARAGRAPH_SCORE = "paragraph_labels"
 TOKEN_SCORE = "token_values"
 """Name of the token values score (the name of the `token_values` scorer)."""
 
-PARAGRAPH_LAYER = "paragraph labels"
-"""Name of the paragraph labels layer."""
+PARAGRAPH_SET = "paragraph labels"
+"""Name of the paragraph labels annotation set."""
 
-TOKEN_LAYER = "probes"
-"""Name of the token values layer."""
+TOKEN_SET = "probes"
+"""Name of the token values annotation set."""
 
 PARAGRAPH_DESCRIPTION = "A classifier's answers to questions about each paragraph."
 TOKEN_DESCRIPTION = "Values of probes on each token."
@@ -83,7 +83,7 @@ ENCODING = "o200k_base"
 """tiktoken encoding the token values are on."""
 
 TOKEN_METADATA: dict[str, JsonValue] = {"tokenizer": f"tiktoken/{ENCODING}"}
-"""Metadata of the token values layer."""
+"""Metadata of the token values annotation set."""
 
 PROBES = [fake.probe for fake in FAKE_PROBES]
 FAKES = {fake.probe.name: fake for fake in FAKE_PROBES}
@@ -229,7 +229,7 @@ def paragraph_labels(questions: list[CategoricalField], seed: str) -> Scorer:
         seed: Seed text for `random_classifier`, e.g. the log's eval id.
     """
     return text_annotations(
-        PARAGRAPH_LAYER,
+        PARAGRAPH_SET,
         questions,
         classifier_annotator(REASONING_PARAGRAPHS, random_classifier(seed)),
         source=CLASSIFIER,
@@ -246,7 +246,7 @@ def token_values(seed: str) -> Scorer:
         seed: Seed text for `fake_probe_runner`, e.g. the log's eval id.
     """
     return text_annotations(
-        TOKEN_LAYER,
+        TOKEN_SET,
         PROBES,
         probe_annotator(find_spans(tokens(ENCODING)), fake_probe_runner(seed)),
         source=PROBE_RUNNER,
@@ -378,97 +378,99 @@ class LogSummary(NamedTuple):
     """None if the log has no token values."""
 
 
-def score_layer(score: Score, where: str) -> AnnotationLayer:
-    """The one layer of a score, after checking its metadata and value.
+def score_set(score: Score, where: str) -> AnnotationSet:
+    """The one annotation set of a score, after checking its metadata and value.
 
     Raises:
-        ValueError: If the metadata doesn't validate or hold one layer, or
-            the score's value isn't the layer's number of spans.
+        ValueError: If the metadata doesn't validate or hold one annotation
+            set, or the score's value isn't the set's number of spans.
     """
     metadata = score.metadata or {}
     if TEXT_ANNOTATIONS_KEY not in metadata:
         raise ValueError(f"A score of {where} has no {TEXT_ANNOTATIONS_KEY}")
     annotations = TextAnnotations.model_validate(metadata[TEXT_ANNOTATIONS_KEY])
-    if len(annotations.layers) != 1:
-        raise ValueError(f"A score of {where} has {len(annotations.layers)} layers")
-    layer = annotations.layers[0]
-    if score.value != layer.span_count():
+    if len(annotations.sets) != 1:
+        raise ValueError(
+            f"A score of {where} has {len(annotations.sets)} annotation sets"
+        )
+    annotation_set = annotations.sets[0]
+    if score.value != annotation_set.span_count():
         raise ValueError(f"A score value of {where} isn't its number of spans")
-    return layer
+    return annotation_set
 
 
-def check_paragraph_layer(
+def check_paragraph_set(
     sample: EvalSample,
-    layer: AnnotationLayer,
+    annotation_set: AnnotationSet,
     questions: list[CategoricalField],
     where: str,
 ) -> list[str]:
-    """Check a sample's paragraph layer, and give the text of each paragraph.
+    """Check a sample's paragraph annotation set, and give each paragraph's text.
 
     Raises:
-        ValueError: If the layer isn't the expected one, a part isn't a text
+        ValueError: If the set isn't the expected one, a part isn't a text
             part of the sample in transcript order, or the spans aren't the
             paragraphs of the sample's reasoning.
     """
     if (
-        layer.name,
-        layer.unit,
-        layer.source,
-        layer.metadata,
-        layer.description,
+        annotation_set.name,
+        annotation_set.unit,
+        annotation_set.source,
+        annotation_set.metadata,
+        annotation_set.description,
     ) != (
-        PARAGRAPH_LAYER,
+        PARAGRAPH_SET,
         "paragraph",
         CLASSIFIER,
         {},
         PARAGRAPH_DESCRIPTION,
-    ) or layer.fields != questions:
-        raise ValueError(f"Paragraph layer of {where} isn't the expected one")
-    texts = layer_texts(layer, sample.messages)
+    ) or annotation_set.fields != questions:
+        raise ValueError(f"Paragraph annotation set of {where} isn't the expected one")
+    texts = set_texts(annotation_set, sample.messages)
     spans = [
         Span(part.message_id, part.content_index, start, end)
-        for part in layer.parts
+        for part in annotation_set.parts
         for start, end in part.ranges()
     ]
     if spans != REASONING_PARAGRAPHS(sample.messages):
         raise ValueError(f"Spans of {where} aren't the paragraphs of its reasoning")
     return [
         text[start:end]
-        for part, text in zip(layer.parts, texts, strict=True)
+        for part, text in zip(annotation_set.parts, texts, strict=True)
         for start, end in part.ranges()
     ]
 
 
-def check_token_layer(
-    sample: EvalSample, layer: AnnotationLayer, where: str
+def check_token_set(
+    sample: EvalSample, annotation_set: AnnotationSet, where: str
 ) -> list[str]:
-    """Check a sample's token layer, and give the text of each part.
+    """Check a sample's token annotation set, and give the text of each part.
 
     Raises:
-        ValueError: If the layer isn't the expected one, its parts aren't the
+        ValueError: If the set isn't the expected one, its parts aren't the
             sample's text parts in order, or a part's tokens don't cover its
             text exactly.
     """
     if (
-        layer.name,
-        layer.unit,
-        layer.source,
-        layer.metadata,
-        layer.description,
+        annotation_set.name,
+        annotation_set.unit,
+        annotation_set.source,
+        annotation_set.metadata,
+        annotation_set.description,
     ) != (
-        TOKEN_LAYER,
+        TOKEN_SET,
         "token",
         PROBE_RUNNER,
         TOKEN_METADATA,
         TOKEN_DESCRIPTION,
-    ) or layer.fields != PROBES:
-        raise ValueError(f"Token layer of {where} isn't the expected one")
-    texts = layer_texts(layer, sample.messages)
-    if [(p.message_id, p.content_index) for p in layer.parts] != [
+    ) or annotation_set.fields != PROBES:
+        raise ValueError(f"Token annotation set of {where} isn't the expected one")
+    texts = set_texts(annotation_set, sample.messages)
+    if [(p.message_id, p.content_index) for p in annotation_set.parts] != [
         (p.message_id, p.content_index) for p in text_parts(sample.messages)
     ]:
         raise ValueError(f"Parts of {where} aren't its text parts in order")
-    for part, text in zip(layer.parts, texts, strict=True):
+    for part, text in zip(annotation_set.parts, texts, strict=True):
         check_covers(text, part.ranges())
     return texts
 
@@ -525,10 +527,10 @@ def check_log(source: EvalLog, output_path: Path) -> LogSummary:
         check_scores(source_sample, sample, file, where)
         scores = sample.scores or {}
 
-        paragraph_layer = score_layer(scores[PARAGRAPH_SCORE], where)
-        paragraphs = check_paragraph_layer(sample, paragraph_layer, questions, where)
+        paragraph_set = score_set(scores[PARAGRAPH_SCORE], where)
+        paragraphs = check_paragraph_set(sample, paragraph_set, questions, where)
         spans += len(paragraphs)
-        for part in paragraph_layer.parts:
+        for part in paragraph_set.parts:
             for name, values in part.values.items():
                 tally[name].update(str(value) for value in values)
         if not source_sample.error and reference_scorer in (source_sample.scores or {}):
@@ -543,9 +545,9 @@ def check_log(source: EvalLog, output_path: Path) -> LogSummary:
 
         if TOKEN_SCORE not in scores:
             continue
-        token_layer = score_layer(scores[TOKEN_SCORE], where)
-        texts = check_token_layer(sample, token_layer, where)
-        for part, text in zip(token_layer.parts, texts, strict=True):
+        token_set = score_set(scores[TOKEN_SCORE], where)
+        texts = check_token_set(sample, token_set, where)
+        for part, text in zip(token_set.parts, texts, strict=True):
             parts += 1
             tokens += len(part.starts)
             offsets = part.ranges()

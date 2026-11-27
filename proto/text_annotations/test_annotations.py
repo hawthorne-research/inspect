@@ -18,14 +18,14 @@ from inspect_ai.tool import ToolCall
 
 from .annotations import (
     AnnotatedPart,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     ContentType,
     NumericField,
     Role,
     TextAnnotations,
     TextRange,
-    layer_texts,
+    set_texts,
     text_parts,
 )
 from .spans import (
@@ -82,12 +82,12 @@ def with_probabilities(**changes: list[list[float]]) -> dict[str, Any]:
     return make_part(probabilities=make_part()["probabilities"] | changes)
 
 
-def make_layer(
+def make_set(
     *parts: dict[str, Any],
     fields: Sequence[CategoricalField | NumericField] = FIELDS,
     **changes: Any,
 ) -> dict[str, Any]:
-    layer: dict[str, Any] = {
+    annotation_set: dict[str, Any] = {
         "name": "labels",
         "unit": "paragraph",
         "source": "random",
@@ -96,17 +96,17 @@ def make_layer(
         "fields": [field.model_dump() for field in fields],
         "parts": list(parts),
     }
-    return layer | changes
+    return annotation_set | changes
 
 
-def make_annotations(*layers: dict[str, Any], **changes: Any) -> dict[str, Any]:
-    return {"version": 1, "layers": list(layers)} | changes
+def make_annotations(*sets: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    return {"version": 2, "sets": list(sets)} | changes
 
 
-def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
+def test_set_with_categorical_and_numeric_fields_round_trips() -> None:
     data = make_annotations(
-        make_layer(make_part(), make_part(message_id="m2", content_index=None)),
-        make_layer(
+        make_set(make_part(), make_part(message_id="m2", content_index=None)),
+        make_set(
             make_part(values={"probe": [1, 2, 3]}, probabilities={}),
             name="probes",
             unit="token",
@@ -117,8 +117,8 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
     )
     annotations = TextAnnotations.model_validate(data)
     dumped = annotations.model_dump()
-    assert list(dumped) == ["version", "layers"]
-    assert list(dumped["layers"][0]) == [
+    assert list(dumped) == ["version", "sets"]
+    assert list(dumped["sets"][0]) == [
         "name",
         "unit",
         "source",
@@ -127,8 +127,8 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
         "fields",
         "parts",
     ]
-    assert dumped["layers"][1]["metadata"] == METADATA
-    assert dumped["layers"][0]["fields"] == [
+    assert dumped["sets"][1]["metadata"] == METADATA
+    assert dumped["sets"][0]["fields"] == [
         {
             "name": "kind",
             "description": None,
@@ -152,7 +152,7 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
             "metadata": {"model_layer": 3},
         },
     ]
-    assert list(dumped["layers"][0]["parts"][0]) == [
+    assert list(dumped["sets"][0]["parts"][0]) == [
         "message_id",
         "content_index",
         "starts",
@@ -161,32 +161,32 @@ def test_layer_with_categorical_and_numeric_fields_round_trips() -> None:
         "probabilities",
     ]
     # integer values of a numeric field are read as floats
-    assert dumped["layers"][1]["parts"][0]["values"] == {"probe": [1.0, 2.0, 3.0]}
-    dumped["layers"][1]["parts"][0]["values"] = {"probe": [1, 2, 3]}
+    assert dumped["sets"][1]["parts"][0]["values"] == {"probe": [1.0, 2.0, 3.0]}
+    dumped["sets"][1]["parts"][0]["values"] = {"probe": [1, 2, 3]}
     assert dumped == data
     assert TextAnnotations.model_validate(dumped) == annotations
     from_json = TextAnnotations.model_validate_json(annotations.model_dump_json())
     assert from_json == annotations
     # "1" and "0" options stay strings rather than becoming numbers
-    assert from_json.layers[0].parts[0].values["suspects"] == ["0", "1", "0"]
-    assert [type(field) for field in from_json.layers[0].fields] == [
+    assert from_json.sets[0].parts[0].values["suspects"] == ["0", "1", "0"]
+    assert [type(field) for field in from_json.sets[0].fields] == [
         CategoricalField,
         CategoricalField,
         NumericField,
     ]
-    assert annotations.layers[0].span_count() == 6
-    assert annotations.layers[0].parts[0].ranges() == [(0, 3), (3, 6), (7, 9)]
+    assert annotations.sets[0].span_count() == 6
+    assert annotations.sets[0].parts[0].ranges() == [(0, 3), (3, 6), (7, 9)]
 
 
-def test_layer_and_field_metadata_and_negative_default_to_empty() -> None:
-    layer = make_layer() | {
+def test_set_and_field_metadata_and_negative_default_to_empty() -> None:
+    annotation_set = make_set() | {
         "fields": [
             {"name": "kind", "type": "categorical", "options": ["a", "b"]},
             {"name": "probe", "type": "numeric"},
         ]
     }
-    del layer["metadata"]
-    validated = AnnotationLayer.model_validate(layer)
+    del annotation_set["metadata"]
+    validated = AnnotationSet.model_validate(annotation_set)
     assert validated.metadata == {}
     kind, probe = validated.fields
     assert isinstance(kind, CategoricalField)
@@ -194,14 +194,24 @@ def test_layer_and_field_metadata_and_negative_default_to_empty() -> None:
     assert (probe.description, probe.metadata) == (None, {})
 
 
+def test_unit_is_optional_but_not_empty() -> None:
+    annotation_set = make_set()
+    del annotation_set["unit"]
+    assert AnnotationSet.model_validate(annotation_set).unit is None
+    data = make_annotations(make_set(unit=None))
+    assert TextAnnotations.model_validate(data).model_dump() == data
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        AnnotationSet.model_validate(make_set(unit=""))
+
+
 def test_probabilities_are_optional_for_each_field() -> None:
     without = make_part()
     del without["probabilities"]
     one_field = make_part(message_id="m2")
     del one_field["probabilities"]["suspects"]
-    layer = AnnotationLayer.model_validate(make_layer(without, one_field))
-    assert layer.parts[0].probabilities == {}
-    assert list(layer.parts[1].probabilities) == ["kind"]
+    annotation_set = AnnotationSet.model_validate(make_set(without, one_field))
+    assert annotation_set.parts[0].probabilities == {}
+    assert list(annotation_set.parts[1].probabilities) == ["kind"]
     # probabilities may be a little off 1 after rounding
     AnnotatedPart.model_validate(
         with_probabilities(kind=[[0.335, 0.335, 0.335]] * 3, suspects=[[0.5, 0.5]] * 3)
@@ -212,182 +222,172 @@ def test_probabilities_are_optional_for_each_field() -> None:
     "data, message",
     [
         # spans
-        (make_annotations(make_layer(make_part(ends=[3, 6]))), "3 starts but 2 ends"),
+        (make_annotations(make_set(make_part(ends=[3, 6]))), "3 starts but 2 ends"),
         (
-            make_annotations(make_layer(make_part(starts=[-1, 3, 7]))),
+            make_annotations(make_set(make_part(starts=[-1, 3, 7]))),
             "starts before 0",
         ),
         (
-            make_annotations(make_layer(make_part(starts=[0, 2, 7]))),
+            make_annotations(make_set(make_part(starts=[0, 2, 7]))),
             "overlaps or comes before",
         ),
         (
-            make_annotations(make_layer(make_part(starts=[0, 7, 3], ends=[3, 9, 6]))),
+            make_annotations(make_set(make_part(starts=[0, 7, 3], ends=[3, 9, 6]))),
             "overlaps or comes before",
         ),
         (
-            make_annotations(make_layer(make_part(ends=[3, 3, 9]))),
+            make_annotations(make_set(make_part(ends=[3, 3, 9]))),
             "Span 1 \\[3, 3\\) of the part 0 of message m1 is empty",
         ),
         (
-            make_annotations(make_layer(make_part(content_index=-1))),
+            make_annotations(make_set(make_part(content_index=-1))),
             "negative content index",
         ),
         (
-            make_annotations(make_layer(make_part(starts=[0.0, 3, 7]))),
+            make_annotations(make_set(make_part(starts=[0.0, 3, 7]))),
             "valid integer",
         ),
         # values
         (
-            make_annotations(make_layer(with_values(kind=["work", "work"]))),
+            make_annotations(make_set(with_values(kind=["work", "work"]))),
             "Field 'kind' has 2 values for the 3 spans",
         ),
         (
-            make_annotations(make_layer(with_values(kind=["work", "other", "work"]))),
+            make_annotations(make_set(with_values(kind=["work", "other", "work"]))),
             "isn't one of its options",
         ),
         (
-            make_annotations(make_layer(with_values(suspects=[0, 1, 0]))),
+            make_annotations(make_set(with_values(suspects=[0, 1, 0]))),
             "isn't one of its options",
         ),
         (
-            make_annotations(make_layer(with_values(probe=["0.1", "0.2", "0.3"]))),
+            make_annotations(make_set(with_values(probe=["0.1", "0.2", "0.3"]))),
             "aren't numbers",
         ),
         (
-            make_annotations(make_layer(with_values(probe=[True, False, True]))),
+            make_annotations(make_set(with_values(probe=[True, False, True]))),
             "valid",
         ),
         (
-            make_annotations(make_layer(with_values(probe=[0.1, math.nan, 3.0]))),
+            make_annotations(make_set(with_values(probe=[0.1, math.nan, 3.0]))),
             "finite",
         ),
         (
-            make_annotations(make_layer(with_values(probe=[0.1, 0.2, math.inf]))),
+            make_annotations(make_set(with_values(probe=[0.1, 0.2, math.inf]))),
             "finite",
         ),
         (
-            make_annotations(make_layer(make_part(values={"kind": ["work"] * 3}))),
+            make_annotations(make_set(make_part(values={"kind": ["work"] * 3}))),
             "Fields of the part 0 of message m1 are",
         ),
         (
-            make_annotations(make_layer(with_values(extra=[0.0, 0.0, 0.0]))),
+            make_annotations(make_set(with_values(extra=[0.0, 0.0, 0.0]))),
             "Fields of the part 0 of message m1 are",
         ),
         # probabilities
         (
-            make_annotations(make_layer(with_probabilities(kind=[[0.7, 0.2, 0.1]]))),
+            make_annotations(make_set(with_probabilities(kind=[[0.7, 0.2, 0.1]]))),
             "1 probability lists for the 3 spans",
         ),
         (
-            make_annotations(
-                make_layer(with_probabilities(suspects=[[1.5, -0.5]] * 3))
-            ),
+            make_annotations(make_set(with_probabilities(suspects=[[1.5, -0.5]] * 3))),
             "aren't all in \\[0, 1\\] or don't sum to 1",
         ),
         (
-            make_annotations(
-                make_layer(with_probabilities(kind=[[0.5, 0.2, 0.1]] * 3))
-            ),
+            make_annotations(make_set(with_probabilities(kind=[[0.5, 0.2, 0.1]] * 3))),
             "don't sum to 1",
         ),
         (
-            make_annotations(make_layer(with_probabilities(kind=[[0.5, 0.5]] * 3))),
+            make_annotations(make_set(with_probabilities(kind=[[0.5, 0.5]] * 3))),
             "one for each of its 3 options",
         ),
         (
-            make_annotations(make_layer(with_probabilities(probe=[[1.0]] * 3))),
+            make_annotations(make_set(with_probabilities(probe=[[1.0]] * 3))),
             "'probe', which isn't a categorical field",
         ),
         (
-            make_annotations(make_layer(with_probabilities(extra=[[1.0]] * 3))),
+            make_annotations(make_set(with_probabilities(extra=[[1.0]] * 3))),
             "'extra', which isn't a categorical field",
         ),
         # fields
-        (make_annotations(make_layer(fields=[])), "at least one field"),
-        (make_annotations(make_layer(fields=[PROBE, PROBE])), "repeated"),
+        (make_annotations(make_set(fields=[])), "at least one field"),
+        (make_annotations(make_set(fields=[PROBE, PROBE])), "repeated"),
         (
-            make_annotations(
-                make_layer(fields=[PROBE.model_copy(update={"name": ""})])
-            ),
+            make_annotations(make_set(fields=[PROBE.model_copy(update={"name": ""})])),
             "at least 1 character",
         ),
         (
             make_annotations(
-                make_layer(fields=[KIND.model_copy(update={"options": ["work"]})])
+                make_set(fields=[KIND.model_copy(update={"options": ["work"]})])
             ),
             "needs at least two options",
         ),
         (
             make_annotations(
-                make_layer(fields=[KIND.model_copy(update={"options": ["a", "a"]})])
+                make_set(fields=[KIND.model_copy(update={"options": ["a", "a"]})])
             ),
             "repeated options",
         ),
         (
             make_annotations(
-                make_layer(fields=[SUSPECTS.model_copy(update={"negative": ["no"]})])
+                make_set(fields=[SUSPECTS.model_copy(update={"negative": ["no"]})])
             ),
             "Negative options \\['no'\\] of field 'suspects' aren't among",
         ),
         (
             make_annotations(
-                make_layer(
-                    fields=[SUSPECTS.model_copy(update={"negative": ["0", "0"]})]
-                )
+                make_set(fields=[SUSPECTS.model_copy(update={"negative": ["0", "0"]})])
             ),
             "repeated negative options",
         ),
         (
             make_annotations(
-                make_layer(
-                    fields=[SUSPECTS.model_copy(update={"negative": ["1", "0"]})]
-                )
+                make_set(fields=[SUSPECTS.model_copy(update={"negative": ["1", "0"]})])
             ),
             "Every option of field 'suspects' is negative",
         ),
         (
-            make_annotations(
-                make_layer() | {"fields": [{"name": "x", "type": "text"}]}
-            ),
+            make_annotations(make_set() | {"fields": [{"name": "x", "type": "text"}]}),
             "does not match any of the expected tags",
         ),
         (
             make_annotations(
-                make_layer()
+                make_set()
                 | {"fields": [{"name": "x", "type": "numeric", "model_layer": 3}]}
             ),
             "Extra inputs are not permitted",
         ),
         (
             make_annotations(
-                make_layer() | {"fields": [PROBE.model_dump() | {"metadata": None}]}
+                make_set() | {"fields": [PROBE.model_dump() | {"metadata": None}]}
             ),
             "valid dictionary",
         ),
-        # parts and layers
+        # parts and annotation sets
         (
-            make_annotations(make_layer(make_part(), make_part())),
+            make_annotations(make_set(make_part(), make_part())),
             "part 0 of message m1 appears more than once",
         ),
         (
             make_annotations(
-                make_layer(make_part(content_index=None), make_part(content_index=None))
+                make_set(make_part(content_index=None), make_part(content_index=None))
             ),
             "string content of message m1 appears more than once",
         ),
-        (make_annotations(make_layer(), make_layer()), "Layer names are repeated"),
-        (make_annotations(make_layer(name="")), "at least 1 character"),
-        (make_annotations(version=0), "Input should be 1"),
-        (make_annotations(make_layer(source=None)), "valid string"),
-        (make_annotations(make_layer(metadata=None)), "valid dictionary"),
-        (make_annotations(make_layer(metadata={"x": {1, 2}})), "metadata.x"),
+        (make_annotations(make_set(), make_set()), "Annotation set names are repeated"),
+        (make_annotations(make_set(name="")), "at least 1 character"),
+        (make_annotations(version=0), "Input should be 2"),
+        (make_annotations(version=1), "Input should be 2"),
+        ({"version": 2, "layers": []}, "sets\n  Field required"),
+        (make_annotations(make_set(source=None)), "valid string"),
+        (make_annotations(make_set(metadata=None)), "valid dictionary"),
+        (make_annotations(make_set(metadata={"x": {1, 2}})), "metadata.x"),
         (
-            make_annotations(make_layer(tokenizer="tiktoken/o200k_base")),
+            make_annotations(make_set(tokenizer="tiktoken/o200k_base")),
             "Extra inputs are not permitted",
         ),
         (
-            make_annotations(make_layer(make_part(probabilites={}))),
+            make_annotations(make_set(make_part(probabilites={}))),
             "Extra inputs are not permitted",
         ),
     ],
@@ -398,9 +398,7 @@ def test_annotations_reject_invalid_data(data: dict[str, Any], message: str) -> 
 
 
 def test_same_message_with_and_without_content_index_are_different_parts() -> None:
-    AnnotationLayer.model_validate(
-        make_layer(make_part(), make_part(content_index=None))
-    )
+    AnnotationSet.model_validate(make_set(make_part(), make_part(content_index=None)))
 
 
 def transcript() -> list[ChatMessage]:
@@ -488,12 +486,12 @@ def spans_of(
     }
 
 
-def test_layer_texts_checks_parts_against_messages() -> None:
+def test_set_texts_checks_parts_against_messages() -> None:
     messages = transcript()
 
     def texts(*parts: dict[str, Any]) -> list[str]:
-        layer = AnnotationLayer.model_validate(make_layer(*parts, fields=[PROBE]))
-        return layer_texts(layer, messages)
+        annotation_set = AnnotationSet.model_validate(make_set(*parts, fields=[PROBE]))
+        return set_texts(annotation_set, messages)
 
     assert texts(spans_of("u1", None, [(0, 9)]), spans_of("a1", 2, [(0, 4)])) == [
         "Translate the memo. A grader will check it.",

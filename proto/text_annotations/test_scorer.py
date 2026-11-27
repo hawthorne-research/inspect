@@ -22,12 +22,12 @@ from inspect_ai.tool import ToolCall
 
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     NumericField,
     TextAnnotations,
     TextRange,
-    layer_texts,
+    set_texts,
     text_parts,
 )
 from .classifiers import SpanProbabilities, binary_question, classifier_annotator
@@ -65,18 +65,18 @@ def run(scorer: Scorer, state: TaskState) -> Score:
     return result
 
 
-def only_layer(score: Score) -> AnnotationLayer:
+def only_set(score: Score) -> AnnotationSet:
     annotations = TextAnnotations.model_validate(
         (score.metadata or {})[TEXT_ANNOTATIONS_KEY]
     )
-    [layer] = annotations.layers
-    return layer
+    [annotation_set] = annotations.sets
+    return annotation_set
 
 
-def layer_spans(layer: AnnotationLayer) -> list[Span]:
+def set_spans(annotation_set: AnnotationSet) -> list[Span]:
     return [
         Span(part.message_id, part.content_index, start, end)
-        for part in layer.parts
+        for part in annotation_set.parts
         for start, end in part.ranges()
     ]
 
@@ -125,9 +125,11 @@ def transcript() -> list[ChatMessage]:
     ]
 
 
-def check_labels(layer: AnnotationLayer, questions: Sequence[CategoricalField]) -> None:
+def check_labels(
+    annotation_set: AnnotationSet, questions: Sequence[CategoricalField]
+) -> None:
     """Each label is its span's most probable option, the earliest one on ties."""
-    for part in layer.parts:
+    for part in annotation_set.parts:
         for question in questions:
             for label, probabilities in zip(
                 part.values[question.name],
@@ -159,18 +161,23 @@ def test_classifier_on_paragraphs_is_deterministic() -> None:
     assert first.value == 3
     assert first.explanation == "3 paragraphs, 2 fields"
 
-    layer = only_layer(first)
-    assert (layer.name, layer.unit, layer.source, layer.metadata) == (
+    annotation_set = only_set(first)
+    assert (
+        annotation_set.name,
+        annotation_set.unit,
+        annotation_set.source,
+        annotation_set.metadata,
+    ) == (
         "paragraph labels",
         "paragraph",
         "random",
         {},
     )
-    assert layer.fields == QUESTIONS
-    [part] = layer.parts
+    assert annotation_set.fields == QUESTIONS
+    [part] = annotation_set.parts
     assert (part.message_id, part.content_index) == ("m1", 0)
     assert part.ranges() == [(0, 7), (10, 14), (17, 23)]
-    check_labels(layer, QUESTIONS)
+    check_labels(annotation_set, QUESTIONS)
 
     other = paragraph_labels(QUESTIONS, "other seed")
     assert run(other, state).model_dump() != first.model_dump()
@@ -233,20 +240,25 @@ def test_probe_runner_on_tokens_gives_values_for_every_text_part() -> None:
     second = run(scorer, state)
     assert first.model_dump() == second.model_dump()
 
-    layer = only_layer(first)
-    assert (layer.name, layer.unit, layer.source, layer.metadata) == (
+    annotation_set = only_set(first)
+    assert (
+        annotation_set.name,
+        annotation_set.unit,
+        annotation_set.source,
+        annotation_set.metadata,
+    ) == (
         "probes",
         "token",
         "fake probes",
         TOKENIZER,
     )
-    assert layer.fields == PROBES
+    assert annotation_set.fields == PROBES
     parts = text_parts(state.messages)
-    assert [(p.message_id, p.content_index) for p in layer.parts] == [
+    assert [(p.message_id, p.content_index) for p in annotation_set.parts] == [
         (p.message_id, p.content_index) for p in parts
     ]
     token_count = 0
-    for annotated, part in zip(layer.parts, parts, strict=True):
+    for annotated, part in zip(annotation_set.parts, parts, strict=True):
         assert annotated.ranges() == tokens()(part.text)
         assert annotated.probabilities == {}
         for probe_values in annotated.values.values():
@@ -266,7 +278,7 @@ def test_probe_runner_without_text() -> None:
     result = run(token_values(PROBES), state)
     assert result.value == 0
     assert result.explanation == "0 tokens, 4 fields"
-    assert only_layer(result).parts == []
+    assert only_set(result).parts == []
 
 
 class ConstantRunner:
@@ -344,10 +356,10 @@ def test_scorer_takes_any_value_type_on_any_spans() -> None:
         metadata=TOKENIZER,
     )
     result = run(labelled_tokens, state)
-    layer = only_layer(result)
-    assert layer_spans(layer) == TOKENS(state.messages)
+    annotation_set = only_set(result)
+    assert set_spans(annotation_set) == TOKENS(state.messages)
     assert result.value == len(TOKENS(state.messages))
-    check_labels(layer, QUESTIONS)
+    check_labels(annotation_set, QUESTIONS)
 
     probed_paragraphs = text_annotations(
         "paragraph probes",
@@ -357,10 +369,10 @@ def test_scorer_takes_any_value_type_on_any_spans() -> None:
         unit="paragraph",
     )
     result = run(probed_paragraphs, state)
-    layer = only_layer(result)
-    assert layer_spans(layer) == REASONING_PARAGRAPHS(state.messages)
+    annotation_set = only_set(result)
+    assert set_spans(annotation_set) == REASONING_PARAGRAPHS(state.messages)
     assert result.explanation == "4 paragraphs, 4 fields"
-    for part in layer.parts:
+    for part in annotation_set.parts:
         assert set(part.values) == {probe.name for probe in PROBES}
         assert part.probabilities == {}
 
@@ -402,7 +414,6 @@ def mixed_scorer(spans: list[AnnotatedSpan]) -> Scorer:
         MIXED,
         ListAnnotator(spans),
         source="test",
-        unit="span",
         description="Mixed fields.",
         metadata={"how": ["by", "hand"]},
     )
@@ -419,22 +430,29 @@ def test_scorer_groups_spans_into_parts_in_transcript_order() -> None:
     ]
     result = run(mixed_scorer(spans), state)
     assert result.value == 5
+    # without a unit, the explanation calls the spans "spans"
     assert result.explanation == "5 spans, 2 fields"
-    layer = only_layer(result)
-    assert (layer.description, layer.metadata) == (
-        "Mixed fields.",
-        {"how": ["by", "hand"]},
-    )
-    assert [(p.message_id, p.content_index, p.ranges()) for p in layer.parts] == [
+    annotation_set = only_set(result)
+    assert (
+        annotation_set.unit,
+        annotation_set.description,
+        annotation_set.metadata,
+    ) == (None, "Mixed fields.", {"how": ["by", "hand"]})
+    assert [
+        (p.message_id, p.content_index, p.ranges()) for p in annotation_set.parts
+    ] == [
         ("u1", None, [TextRange(0, 9), TextRange(20, 26)]),
         ("a1", 0, [TextRange(0, 4)]),
         ("a2", 0, [TextRange(0, 5), TextRange(7, 16)]),
     ]
-    assert layer.parts[0].values == {"kind": ["work", "grader"], "score": [1.0, 3.0]}
+    assert annotation_set.parts[0].values == {
+        "kind": ["work", "grader"],
+        "score": [1.0, 3.0],
+    }
     # probabilities are stored in the order of the field's options
-    assert layer.parts[0].probabilities == {"kind": [[0.5, 0.3, 0.2]] * 2}
-    assert layer.parts[2].probabilities == {}
-    assert len(layer_texts(layer, state.messages)) == 3
+    assert annotation_set.parts[0].probabilities == {"kind": [[0.5, 0.3, 0.2]] * 2}
+    assert annotation_set.parts[2].probabilities == {}
+    assert len(set_texts(annotation_set, state.messages)) == 3
 
 
 @pytest.mark.parametrize(
@@ -507,19 +525,24 @@ def test_scorer_rejects_invalid_spans_naming_sample_and_part(
 def test_both_scorers_on_one_sample_give_two_valid_scores() -> None:
     state = make_state(transcript())
     scores = [run(paragraph_labels(QUESTIONS), state), run(token_values(PROBES), state)]
-    layers = [only_layer(score) for score in scores]
-    assert [layer.name for layer in layers] == ["paragraph labels", "probes"]
-    assert [score.value for score in scores] == [layer.span_count() for layer in layers]
-    labels, values = layers
+    sets = [only_set(score) for score in scores]
+    assert [annotation_set.name for annotation_set in sets] == [
+        "paragraph labels",
+        "probes",
+    ]
+    assert [score.value for score in scores] == [
+        annotation_set.span_count() for annotation_set in sets
+    ]
+    labels, values = sets
     assert [(p.message_id, p.content_index) for p in labels.parts] == [
         ("a1", 0),
         ("a2", 0),
     ]
     assert len(values.parts) == 6
-    # the viewer reads layers from every score, so each must fit the messages
-    for layer in layers:
-        texts = layer_texts(layer, state.messages)
-        assert len(texts) == len(layer.parts)
+    # the viewer reads the annotation sets of every score, so each must fit the messages
+    for annotation_set in sets:
+        texts = set_texts(annotation_set, state.messages)
+        assert len(texts) == len(annotation_set.parts)
     assert scores[0].explanation == "4 paragraphs, 2 fields"
 
 

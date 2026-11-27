@@ -1,7 +1,7 @@
 """A scorer that stores the values of some fields on spans of a sample's text.
 
-`text_annotations` adds one layer of `TextAnnotations` to its score's
-metadata. An `Annotator` gives the layer's spans and their values. Write one
+`text_annotations` adds one annotation set of `TextAnnotations` to its score's
+metadata. An `Annotator` gives the set's spans and their values. Write one
 to attach values computed elsewhere, or build one from a `SpanFinder` and a
 classifier (`classifiers.classifier_annotator`) or a probe runner
 (`probes.probe_annotator`).
@@ -20,7 +20,7 @@ from inspect_ai.solver import TaskState
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
     AnnotatedPart,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     NumericField,
     TextAnnotations,
@@ -38,7 +38,7 @@ FieldType = TypeVar("FieldType", CategoricalField, NumericField)
 
 @dataclass(frozen=True)
 class AnnotatedSpan:
-    """A span and the value of each field of a layer on it."""
+    """A span and the value of each field of an annotation set on it."""
 
     span: Span
     values: Mapping[str, str | float]
@@ -71,61 +71,62 @@ class Annotator(Protocol):
 
 @scorer(metrics=ANNOTATION_METRICS)
 def text_annotations(
-    layer_name: str,
+    name: str,
     fields: Sequence[CategoricalField | NumericField],
     annotate: Annotator,
     *,
     source: str,
-    unit: str,
+    unit: str | None = None,
     description: str | None = None,
     metadata: Mapping[str, JsonValue] | None = None,
 ) -> Scorer:
     """Store the value of some fields on spans of the sample's messages.
 
-    Adds a layer with the spans and values that `annotate` gives. They are
-    grouped into parts, in transcript order, and checked against the fields
-    and the messages. The score's value is the number of spans.
+    Adds an annotation set with the spans and values that `annotate` gives.
+    They are grouped into parts, in transcript order, and checked against the
+    fields and the messages. The score's value is the number of spans.
 
     To give the score another name, wrap this in a `@scorer`-decorated
     factory with `metrics=ANNOTATION_METRICS` (the score takes the factory's
     name).
 
     Args:
-        layer_name: Name of the layer, e.g. "paragraph labels".
+        name: Name of the annotation set, e.g. "paragraph labels".
         fields: Fields to give a value on every span.
         annotate: Gives the spans and the values.
         source: What produced the values, e.g. "typesafe/jev-1.14".
-        unit: What one span is, for display, e.g. "paragraph" or "token".
-        description: What the layer holds.
-        metadata: How the layer was made, e.g.
+        unit: What one span is, for display only, e.g. "paragraph" or
+            "token". If None, a viewer calls each one a "span".
+        description: What the set holds.
+        metadata: How the set was made, e.g.
             `{"tokenizer": "tiktoken/o200k_base"}`.
 
     Raises:
-        ValidationError: If the fields or the layer's other attributes are
+        ValidationError: If the fields or the set's other attributes are
             invalid.
     """
     fields = list(fields)
-    layer_metadata = dict(metadata or {})
+    set_metadata = dict(metadata or {})
 
-    def make_layer(parts: list[AnnotatedPart]) -> AnnotationLayer:
-        return AnnotationLayer(
-            name=layer_name,
+    def make_set(parts: list[AnnotatedPart]) -> AnnotationSet:
+        return AnnotationSet(
+            name=name,
             unit=unit,
             source=source,
-            metadata=layer_metadata,
+            metadata=set_metadata,
             description=description,
             fields=fields,
             parts=parts,
         )
 
     # validates the fields now rather than at the first sample
-    make_layer([])
+    make_set([])
 
     async def score(state: TaskState, target: Target) -> Score:
         sample = describe_sample(state)
         spans = await annotate(state, fields)
         parts = annotated_parts(spans, fields, state.messages, sample)
-        return annotation_score([layer_for_sample(make_layer, parts, sample)])
+        return annotation_score([set_for_sample(make_set, parts, sample)])
 
     return score
 
@@ -246,39 +247,40 @@ def describe_range(span: Span) -> str:
     return f"[{span.start}, {span.end})"
 
 
-def layer_for_sample(
-    make_layer: Callable[[list[AnnotatedPart]], AnnotationLayer],
+def set_for_sample(
+    make_set: Callable[[list[AnnotatedPart]], AnnotationSet],
     parts: list[AnnotatedPart],
     sample: str,
-) -> AnnotationLayer:
-    """A layer from the parts of one sample, naming the sample if they're invalid.
+) -> AnnotationSet:
+    """An annotation set of one sample's parts, naming the sample if they're invalid.
 
     Raises:
-        ValueError: If the parts don't make a valid layer.
+        ValueError: If the parts don't make a valid annotation set.
     """
     try:
-        return make_layer(parts)
+        return make_set(parts)
     except ValueError as ex:
         raise ValueError(f"Invalid annotations for {sample}: {ex}") from ex
 
 
-def annotation_score(layers: Sequence[AnnotationLayer]) -> Score:
-    """A score holding annotation layers in its metadata.
+def annotation_score(sets: Sequence[AnnotationSet]) -> Score:
+    """A score holding annotation sets in its metadata.
 
-    Its value is the total number of spans in the layers, and its explanation
-    gives each layer's number of spans and fields, e.g. "71 paragraphs, 4
-    fields".
+    Its value is the total number of spans in the sets, and its explanation
+    gives each set's number of spans and fields, e.g. "71 paragraphs, 4
+    fields", calling the spans "spans" if the set has no `unit`.
 
     Raises:
-        ValueError: If the layers don't make valid `TextAnnotations`.
+        ValueError: If the sets don't make valid `TextAnnotations`.
     """
-    annotations = TextAnnotations(layers=list(layers))
+    annotations = TextAnnotations(sets=list(sets))
     explanation = "; ".join(
-        f"{plural(layer.span_count(), layer.unit)}, {plural(len(layer.fields), 'field')}"
-        for layer in annotations.layers
+        f"{plural(annotation_set.span_count(), annotation_set.unit or 'span')}, "
+        f"{plural(len(annotation_set.fields), 'field')}"
+        for annotation_set in annotations.sets
     )
     return Score(
-        value=sum(layer.span_count() for layer in annotations.layers),
+        value=sum(annotation_set.span_count() for annotation_set in annotations.sets),
         explanation=explanation,
         metadata={TEXT_ANNOTATIONS_KEY: annotations.model_dump()},
     )

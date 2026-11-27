@@ -16,7 +16,7 @@ This is a prototype. The format and the API may change, and none of it is in ups
 In a sample's **Messages** tab:
 
 - Annotated messages show their raw text, with each span tinted by its value. Categorical options each get a colour. Numeric values are blue below zero and red above, stronger further from zero; full colour is set automatically at the 99th percentile of |value| in the sample.
-- A legend above the messages has a layer picker, a **Color by** picker for the field to colour by, and either the options with their counts (click one to highlight it) or a colour bar. Under it, a strip shows the whole transcript; click a segment to jump to that span.
+- A legend above the messages has an annotation set picker, a **Color by** picker for the field to colour by, and either the options with their counts (click one to highlight it) or a colour bar. Under it, a strip shows the whole transcript; click a segment to jump to that span.
 - Hovering a span shows every field's value, with a bar for each option's probability or for each numeric value.
 - A button in the legend cycles through five colour schemes (shift-click goes back): the default, two colour-blind-safe palettes (Okabe–Ito and Paul Tol's "bright") and two high-contrast schemes with solid colours. Text on a coloured span is black or white, whichever contrasts more with its background by APCA, the contrast measure in the WCAG 3 draft.
 
@@ -32,12 +32,12 @@ Both pictures show a made-up demo transcript with made-up labels and values. You
 
 In a log's **Analytics** tab, next to Samples, the "Along the transcript" view plots annotation values across the log's samples, one panel per sample:
 
-- x is the position of each span (for example each paragraph) in the sample, in the layer you choose under **Spans**.
-- Up to two numeric fields are drawn as lines, the second on its own axis on the right. Each can have a dashed reference line and a fixed range. A field from a layer with other spans (for example per-token probe values) is first aggregated onto those spans, with the mean, max, min, sum or count.
+- x is the position of each span (for example each paragraph) in the sample, in the annotation set you choose under **Spans**.
+- Up to two numeric fields are drawn as lines, the second on its own axis on the right. Each can have a dashed reference line and a fixed range. A field from an annotation set with other spans (for example per-token probe values) is first aggregated onto those spans, with the mean, max, min, sum or count.
 - **Markers** draws a vertical line at every span where a categorical field isn't one of its negative options, in that option's colour.
 - Grey lines mark where each message starts.
 - **Group by** titles and groups the panels by a sample score.
-- Clicking a panel opens that sample's Messages tab, scrolls to that span and flashes it, as clicking the colour strip does. The Messages tab keeps its layer if that layer has the same span (for example another classifier of the same paragraphs) and otherwise switches to the layer under **Spans**. The link is in the URL, so it can be shared.
+- Clicking a panel opens that sample's Messages tab, scrolls to that span and flashes it, as clicking the colour strip does. The Messages tab keeps its annotation set if that set has the same span (for example another classifier of the same paragraphs) and otherwise switches to the set under **Spans**. The link is in the URL, so it can be shared.
 
 The tab loads the samples when you open it, four at a time, and keeps only their annotations.
 
@@ -97,9 +97,9 @@ Then run `pnpm dev` as above and open the log at <http://localhost:5173>.
 
 The Python code is in `proto/text_annotations/`; the demo script and the fake classifier and probe runner are in its `examples/` folder. It isn't part of the installed `inspect_ai` package, so put your scripts in the repository root, or run them from there with `PYTHONPATH=.`, so that `proto` can be imported.
 
-Annotations are added by an ordinary scorer, `text_annotations`, so you can add them during an eval or afterwards to existing logs with `inspect_ai.score`. Each call adds one **layer**: a set of spans with the value of one or more **fields** on each. Its arguments are the layer's name, its fields, an **annotator** that returns the spans with their values, a `source` naming what produced the values, and a `unit` naming what a span is (for display only).
+Annotations are added by an ordinary scorer, `text_annotations`, so you can add them during an eval or afterwards to existing logs with `inspect_ai.score`. Each call adds one **annotation set**: spans with the value of one or more **fields** on each. Its arguments are the set's name, its fields, an **annotator** that returns the spans with their values, a `source` naming what produced the values, and optionally a `unit` naming what a span is, such as "paragraph". The unit is only a label: the viewer uses it in counts and axis titles, and calls the spans "spans" without one.
 
-To add more than one layer to a log, give each its own scorer name by wrapping the call in a `@scorer` function, as below. The score's value is the number of spans.
+To add more than one annotation set to a log, give each its own scorer name by wrapping the call in a `@scorer` function, as below. The score's value is the number of spans.
 
 ### Label paragraphs with a classifier
 
@@ -196,7 +196,7 @@ What each span refers to:
 - `content_index` is the index of the part in the message's `content` list, or `None` when the message's content is a plain string.
 - `start` and `end` are Unicode code-point offsets (Python string indices) into that part's text: a `ContentText`'s `text`, a `ContentReasoning`'s `reasoning`, or the string content. They are the character offsets a Hugging Face fast tokenizer gives with `return_offsets_mapping=True`, as long as you tokenised that text on its own. If you tokenised the whole chat-formatted conversation, map the offsets back to each part. Tokens the chat template adds have no text in the log and are left out.
 
-`probe_field` makes a numeric field and stores the model layer in its `metadata`. A layer can have several fields, for example the same probe at several model layers. Every span then needs a value for each.
+`probe_field` makes a numeric field and stores the model layer in its `metadata`. An annotation set can have several fields, for example the same probe at several model layers. Every span then needs a value for each.
 
 To run probes inside the scorer instead, `probe_annotator(find_spans(tokens()), run_probes)` splits every message into tiktoken `o200k_base` tokens and gives your runner the spans.
 
@@ -218,18 +218,18 @@ write_eval_log(log, "annotated/my-run.eval")
 
 ## Analyse annotations in Python
 
-`spans_df` reads the annotations in one or more logs into a pandas data frame with one row per span per layer per sample. It takes logs as the `inspect_ai.analysis` functions do (a log file, a directory, or a list of either) and reads one sample at a time. Pass `layers=[...]` to read only some layers.
+`spans_df` reads the annotations in one or more logs into a pandas data frame with one row per span per annotation set per sample. It takes logs as the `inspect_ai.analysis` functions do (a log file, a directory, or a list of either) and reads one sample at a time. Pass `sets=[...]` to read only some annotation sets.
 
 Its columns:
 
 - `sample_id`, `eval_id` and `log`, as in `samples_df` and `messages_df`. Join `samples_df` on `sample_id`, and `messages_df` on `sample_id` and `message_id`.
 - `id` and `epoch`: the sample's dataset id and epoch.
-- `score`, `layer` and `unit`.
-- Where the span is: `message_id`, `message_index` (the message's position in the sample's messages, from 0), `role`, `content_index`, `start` and `end`; and `span_index`, the span's position among its layer's spans in the sample, from 0. Join with `messages_df` on `message_id`.
-- `field_<name>` for each field: the option or the number, empty on rows of layers without that field.
+- `score`, `annotation_set` and `unit` (empty if the set has no unit).
+- Where the span is: `message_id`, `message_index` (the message's position in the sample's messages, from 0), `role`, `content_index`, `start` and `end`; and `span_index`, the span's position among its set's spans in the sample, from 0. Join with `messages_df` on `message_id`.
+- `field_<name>` for each field: the option or the number, empty on rows of annotation sets without that field.
 - With `text=True`, the span's `text`. With `probabilities=True`, a `prob_<field>_<option>` column for each option of each categorical field that has probabilities.
 
-`roll_up` aggregates the fields of a fine layer over the spans of a coarse one, for example probe values on tokens over paragraphs. A numeric field is aggregated with `agg` ("mean", "max", "min", "sum" or "count"), and a categorical field gives the most frequent option that isn't negative. On the demo log:
+`roll_up` aggregates the fields of a fine annotation set over the spans of a coarse one, for example probe values on tokens over paragraphs. A numeric field is aggregated with `agg` ("mean", "max", "min", "sum" or "count"), and a categorical field gives the most frequent option that isn't negative. On the demo log:
 
 ```python
 from inspect_ai.analysis import EvalModel, SampleSummary, samples_df
@@ -248,20 +248,20 @@ paragraphs = paragraphs.merge(samples[["sample_id", "model"]], on="sample_id")
 print(paragraphs.groupby(["model", "field_kind"])["field_eval_awareness_L32"].mean())
 ```
 
-`align` is for layers with the same spans, such as two classifiers' labels of the same paragraphs. It keeps the spans that are in every layer you list, with the fields of all of them, so `align(spans, ["labels", "monitor"])` gives one row per paragraph with both layers' fields. Its `layer` is the names joined with "+", here "labels+monitor".
+`align` is for annotation sets with the same spans, such as two classifiers' labels of the same paragraphs. It keeps the spans that are in every set you list, with the fields of all of them, so `align(spans, ["labels", "monitor"])` gives one row per paragraph with both sets' fields. Its `annotation_set` is the names joined with "+", here "labels+monitor".
 
 `roll_up` reads the options of categorical fields from the data frame's `attrs`, where `spans_df` puts them. pandas drops `attrs` when merging, so roll up before joining other tables.
 
 ## Stored format
 
-Each scorer stores its layers in `Score.metadata["text_annotations"]`:
+Each scorer stores its annotation sets in `Score.metadata["text_annotations"]`:
 
 ```
 {
-  "version": 1,
-  "layers": [
+  "version": 2,
+  "sets": [
     {
-      "name": str, "unit": str, "source": str,
+      "name": str, "unit": str | null, "source": str,
       "description": str | null,
       "metadata": {str: JSON value},
       "fields": [
@@ -290,13 +290,13 @@ Each scorer stores its layers in `Score.metadata["text_annotations"]`:
 }
 ```
 
-`negative` lists the options that mean nothing was found: some of the options, but not all. Each part holds the spans in one message part, in order and not overlapping; parts are in transcript order. `negative`, the `metadata` dicts and `probabilities` are optional. The Pydantic models in `proto/text_annotations/annotations.py` check every rule.
+`negative` lists the options that mean nothing was found: some of the options, but not all. Each part holds the spans in one message part, in order and not overlapping; parts are in transcript order. `unit`, `negative`, the `metadata` dicts and `probabilities` are optional; a `unit`, if given, isn't empty. The Pydantic models in `proto/text_annotations/annotations.py` check every rule. They and the viewer read only version 2, so annotations made with an earlier version have to be made again.
 
 ## Limitations
 
-- Annotations are shown in the Messages tab one layer at a time, and the Analytics tab has one view so far.
+- Annotations are shown in the Messages tab one annotation set at a time, and the Analytics tab has one view so far.
 - Tool-call arguments can't be annotated.
-- Inspect stores a score's metadata three times in a log (in the sample, in the transcript's score event and in the reductions). Compression removes most of the cost on disk, but token-level layers still make a log several times larger.
+- Inspect stores a score's metadata three times in a log (in the sample, in the transcript's score event and in the reductions). Compression removes most of the cost on disk, but token-level annotation sets still make a log several times larger.
 - The viewer that `inspect view` serves on its own isn't rebuilt; use the viewer from source as above.
 
 ## Branches

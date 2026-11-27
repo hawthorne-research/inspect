@@ -28,7 +28,7 @@ from .analysis import (
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
     AnnotatedPart,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     NumericField,
 )
@@ -70,7 +70,7 @@ def part(
     )
 
 
-PARAGRAPHS = AnnotationLayer(
+PARAGRAPHS = AnnotationSet(
     name="paragraphs",
     unit="paragraph",
     source="test",
@@ -88,9 +88,9 @@ PARAGRAPHS = AnnotationLayer(
     ],
 )
 
-MONITOR = AnnotationLayer(
+# no unit, so its rows' `unit` is null
+MONITOR = AnnotationSet(
     name="monitor",
-    unit="paragraph",
     source="test",
     fields=[NumericField(name="p")],
     parts=[
@@ -101,7 +101,7 @@ MONITOR = AnnotationLayer(
 
 # Tokens [12, 16) of u1 and [10, 12) of part 0 of a1 cross or lie between
 # paragraphs, and part 1 of a1 has no paragraphs: these are in none.
-TOKENS = AnnotationLayer(
+TOKENS = AnnotationSet(
     name="tokens",
     unit="token",
     source="test",
@@ -200,8 +200,8 @@ def test_spans_df_columns_and_rows(logs: list[str]) -> None:
         "field_kind",
         "field_p",
     ]
-    # logs, then samples, then scores and layers in the order stored
-    blocks = spans[["log", "id", "epoch", "score", "layer"]].drop_duplicates()
+    # logs, then samples, then scores and annotation sets in the order stored
+    blocks = spans[["log", "id", "epoch", "score", "annotation_set"]].drop_duplicates()
     assert blocks.values.tolist() == [
         [logs[0], "s1", 1, "probes", "tokens"],
         [logs[0], "s1", 1, "labels", "paragraphs"],
@@ -210,8 +210,12 @@ def test_spans_df_columns_and_rows(logs: list[str]) -> None:
         [logs[1], "s3", 1, "both", "monitor"],
         [logs[1], "s3", 1, "both", "paragraphs"],
     ]
-    paragraphs = spans[(spans["id"] == "s1") & (spans["layer"] == "paragraphs")]
+    paragraphs = spans[
+        (spans["id"] == "s1") & (spans["annotation_set"] == "paragraphs")
+    ]
     assert paragraphs["unit"].unique().tolist() == ["paragraph"]
+    monitor = spans[spans["annotation_set"] == "monitor"]
+    assert values(monitor["unit"]) == [None] * len(monitor)
     assert paragraphs["message_id"].tolist() == ["sys", "u1", "u1", "a1", "a1"]
     assert paragraphs["message_index"].tolist() == [0, 1, 1, 2, 2]
     assert paragraphs["role"].tolist() == [
@@ -233,7 +237,7 @@ def test_spans_df_columns_and_rows(logs: list[str]) -> None:
         "none",
     ]
     assert values(paragraphs["field_a"]) == [None] * 5
-    tokens = spans[(spans["id"] == "s1") & (spans["layer"] == "tokens")]
+    tokens = spans[(spans["id"] == "s1") & (spans["annotation_set"] == "tokens")]
     assert tokens["span_index"].tolist() == list(range(14))
     assert tokens["field_a"].tolist()[:3] == [1.0, 2.0, 50.0]
     assert values(tokens["field_kind"]) == [None] * 14
@@ -292,7 +296,9 @@ def test_spans_df_text(logs: list[str]) -> None:
     assert "text" not in spans_df(logs).columns
     spans = spans_df(logs, text=True)
     assert list(spans.columns[: len(SPAN_COLUMNS) + 1]) == [*SPAN_COLUMNS, "text"]
-    paragraphs = spans[(spans["id"] == "s1") & (spans["layer"] == "paragraphs")]
+    paragraphs = spans[
+        (spans["id"] == "s1") & (spans["annotation_set"] == "paragraphs")
+    ]
     assert paragraphs["text"].tolist() == [
         "Be brief.",
         "Hello there.",
@@ -307,20 +313,27 @@ def test_spans_df_probabilities(logs: list[str]) -> None:
     spans = spans_df(logs, probabilities=True)
     probabilities = ["prob_kind_work", "prob_kind_grader", "prob_kind_none"]
     assert list(spans.columns[-3:]) == probabilities
-    paragraphs = spans[(spans["id"] == "s1") & (spans["layer"] == "paragraphs")]
+    paragraphs = spans[
+        (spans["id"] == "s1") & (spans["annotation_set"] == "paragraphs")
+    ]
     assert values(paragraphs["prob_kind_grader"]) == [None, None, None, 0.7, 0.1]
-    assert spans.loc[spans["layer"] != "paragraphs", probabilities].isna().all().all()
+    assert (
+        spans.loc[spans["annotation_set"] != "paragraphs", probabilities]
+        .isna()
+        .all()
+        .all()
+    )
 
 
-def test_spans_df_layers(logs: list[str]) -> None:
-    spans = spans_df(logs, layers=["monitor"])
-    assert spans["layer"].unique().tolist() == ["monitor"]
+def test_spans_df_sets(logs: list[str]) -> None:
+    spans = spans_df(logs, sets=["monitor"])
+    assert spans["annotation_set"].unique().tolist() == ["monitor"]
     assert list(spans.columns) == [*SPAN_COLUMNS, "field_p"]
     assert spans["span_index"].tolist() == [0, 1, 2, 0, 1, 2]
     with pytest.raises(TypeError, match="as a list"):
-        spans_df(logs, layers="monitor")
-    with pytest.raises(ValueError, match=r"No layers named \['tokenz'\]"):
-        spans_df(logs, layers=["monitor", "tokenz"])
+        spans_df(logs, sets="monitor")
+    with pytest.raises(ValueError, match=r"No annotation sets named \['tokenz'\]"):
+        spans_df(logs, sets=["monitor", "tokenz"])
 
 
 def test_spans_df_without_logs() -> None:
@@ -329,21 +342,20 @@ def test_spans_df_without_logs() -> None:
     assert spans.empty
 
 
-def bad_layer(**changes: Any) -> dict[str, Any]:
-    layer = MONITOR.model_dump()
-    return {"version": 1, "layers": [layer | changes]}
+def bad_set(**changes: Any) -> dict[str, Any]:
+    return {"version": 2, "sets": [MONITOR.model_dump() | changes]}
 
 
 @pytest.mark.parametrize(
     "annotations, message",
     [
-        (bad_layer(unit=""), "unit"),
+        (bad_set(unit=""), "unit"),
         (
-            bad_layer(parts=[part("a1", 1, [(0, 13)], {"p": [0.5]}).model_dump()]),
+            bad_set(parts=[part("a1", 1, [(0, 13)], {"p": [0.5]}).model_dump()]),
             "past the end of its text",
         ),
         (
-            bad_layer(parts=[part("zz", 0, [(0, 1)], {"p": [0.5]}).model_dump()]),
+            bad_set(parts=[part("zz", 0, [(0, 1)], {"p": [0.5]}).model_dump()]),
             "isn't a text part of the messages",
         ),
     ],
@@ -392,12 +404,14 @@ def test_spans_df_rejects_a_field_both_categorical_and_numeric(
             )
         ],
     )
-    with pytest.raises(ValueError, match="'kind' is categorical in layer 'paragraphs'"):
+    with pytest.raises(
+        ValueError, match="'kind' is categorical in annotation set 'paragraphs'"
+    ):
         spans_df(log)
-    assert spans_df(log, layers=["numeric kind"])["field_kind"].tolist() == [0.5]
+    assert spans_df(log, sets=["numeric kind"])["field_kind"].tolist() == [0.5]
 
 
-def test_align_keeps_spans_in_every_layer(logs: list[str]) -> None:
+def test_align_keeps_spans_in_every_set(logs: list[str]) -> None:
     spans = spans_df(logs, text=True, probabilities=True)
     aligned = align(spans, ["paragraphs", "monitor"])
     assert list(aligned.columns) == [
@@ -409,15 +423,16 @@ def test_align_keeps_spans_in_every_layer(logs: list[str]) -> None:
         "prob_kind_grader",
         "prob_kind_none",
     ]
-    # sample 7 has no monitor layer; part 1 of a1 has no paragraphs
+    # sample 7 has no monitor set; part 1 of a1 has no paragraphs
     assert aligned[["id", "message_id", "start", "end"]].values.tolist() == [
         ["s1", "a1", 0, 10],
         ["s1", "a1", 12, 22],
         ["s3", "a1", 0, 10],
         ["s3", "a1", 12, 22],
     ]
-    assert aligned["layer"].unique().tolist() == ["paragraphs+monitor"]
+    assert aligned["annotation_set"].unique().tolist() == ["paragraphs+monitor"]
     assert aligned["score"].tolist() == ["labels+monitor"] * 2 + ["both"] * 2
+    # units that are null are left out
     assert aligned["unit"].unique().tolist() == ["paragraph"]
     assert aligned["span_index"].tolist() == [0, 1, 0, 1]
     assert aligned["field_kind"].tolist() == ["grader", "none"] * 2
@@ -443,9 +458,9 @@ def test_align_recomputes_span_index_in_transcript_order(logs: list[str]) -> Non
     assert first["span_index"].tolist() == aligned["span_index"].tolist()
 
 
-def test_align_of_one_layer_keeps_its_rows(logs: list[str]) -> None:
+def test_align_of_one_set_keeps_its_rows(logs: list[str]) -> None:
     spans = spans_df(logs, probabilities=True)
-    paragraphs = spans[spans["layer"] == "paragraphs"]
+    paragraphs = spans[spans["annotation_set"] == "paragraphs"]
     aligned = align(spans, ["paragraphs"])
     expected = paragraphs[
         [
@@ -457,20 +472,21 @@ def test_align_of_one_layer_keeps_its_rows(logs: list[str]) -> None:
         ]
     ].reset_index(drop=True)
     pd.testing.assert_frame_equal(aligned, expected)
+    assert values(align(spans, ["monitor"])["unit"]) == [None] * 6
 
 
 def test_align_rejects_fields_of_the_same_name(logs: list[str]) -> None:
     spans = spans_df(logs)
-    copy = spans[spans["layer"] == "paragraphs"].assign(layer="copy")
+    copy = spans[spans["annotation_set"] == "paragraphs"].assign(annotation_set="copy")
     with pytest.raises(
         ValueError, match="'paragraphs' and 'copy' both have field 'kind'"
     ):
         align(pd.concat([spans, copy]), ["paragraphs", "copy"])
 
 
-def test_align_rejects_bad_layers(logs: list[str]) -> None:
+def test_align_rejects_bad_sets(logs: list[str]) -> None:
     spans = spans_df(logs)
-    with pytest.raises(ValueError, match="No spans of layer 'nope'"):
+    with pytest.raises(ValueError, match="No spans of annotation set 'nope'"):
         align(spans, ["paragraphs", "nope"])
     with pytest.raises(ValueError, match="repeated"):
         align(spans, ["paragraphs", "paragraphs"])
@@ -478,7 +494,9 @@ def test_align_rejects_bad_layers(logs: list[str]) -> None:
         align(spans, "paragraphs")
     with pytest.raises(ValueError, match="more than one span at the same position"):
         align(pd.concat([spans, spans]), ["paragraphs", "monitor"])
-    other_score = spans[spans["layer"] == "monitor"].assign(score="other", start=100)
+    other_score = spans[spans["annotation_set"] == "monitor"].assign(
+        score="other", start=100
+    )
     with pytest.raises(ValueError, match="'monitor' is in more than one score"):
         align(pd.concat([spans, other_score]), ["paragraphs", "monitor"])
 
@@ -503,7 +521,7 @@ def test_roll_up_aggregates_numeric_fields(
     rolled = roll_up(
         spans[spans["id"] == "s1"], fine="tokens", coarse="paragraphs", agg=agg
     )
-    assert rolled["layer"].unique().tolist() == ["paragraphs"]
+    assert rolled["annotation_set"].unique().tolist() == ["paragraphs"]
     assert rolled["span_index"].tolist() == [0, 1, 2, 3, 4]
     assert [NAN if v is None else v for v in values(rolled["field_a"])] == (
         pytest.approx(expected, nan_ok=True)
@@ -541,7 +559,7 @@ def test_roll_up_takes_the_most_frequent_option_found(logs: list[str]) -> None:
 def test_roll_up_composes_with_align(logs: list[str]) -> None:
     spans = spans_df(logs)
     rolled = roll_up(spans, fine="tokens", coarse="paragraphs", agg="max")
-    combined = pd.concat([rolled, spans[spans["layer"] == "monitor"]])
+    combined = pd.concat([rolled, spans[spans["annotation_set"] == "monitor"]])
     aligned = align(combined, ["paragraphs", "monitor"])
     assert aligned.loc[aligned["id"] == "s1", "field_a"].tolist() == [30.0, 50.0]
     assert aligned.loc[aligned["id"] == "s1", "field_p"].tolist() == [0.9, 0.1]
@@ -571,8 +589,8 @@ def test_roll_up_rejects_bad_arguments(logs: list[str]) -> None:
         roll_up(spans, fine="tokens", coarse="paragraphs", agg=median)
     with pytest.raises(ValueError, match="into itself"):
         roll_up(spans, fine="tokens", coarse="tokens")
-    with pytest.raises(ValueError, match="No spans of layer 'nope'"):
+    with pytest.raises(ValueError, match="No spans of annotation set 'nope'"):
         roll_up(spans, fine="nope", coarse="paragraphs")
-    copy = spans[spans["layer"] == "tokens"].assign(layer="copy")
+    copy = spans[spans["annotation_set"] == "tokens"].assign(annotation_set="copy")
     with pytest.raises(ValueError, match=r"both have fields \['a', 'flag'\]"):
         roll_up(pd.concat([spans, copy]), fine="copy", coarse="tokens")

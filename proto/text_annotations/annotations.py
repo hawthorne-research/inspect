@@ -1,18 +1,18 @@
 """Annotations of transcript text: the stored format and the text parts it points at.
 
 Annotations are stored in a score's metadata under `text_annotations`, as
-`TextAnnotations(...).model_dump()`. They hold one or more layers. A layer
-gives the value of one or more fields on each of its spans, which can be any
-non-overlapping ranges of the text. A field is categorical (one of a list of
-options, e.g. a classifier's answer to a question, optionally with the
-probability of each option) or numeric (e.g. a probe's value). A categorical
-field's `negative` options are those that mean nothing was found, e.g. "no".
-Fields and layers have a `metadata` dict for anything else about how they
-were made.
+`TextAnnotations(...).model_dump()`. They hold one or more annotation sets.
+An annotation set gives the value of one or more fields on each of its spans,
+which can be any non-overlapping ranges of the text. A field is categorical
+(one of a list of options, e.g. a classifier's answer to a question, optionally
+with the probability of each option) or numeric (e.g. a probe's value). A
+categorical field's `negative` options are those that mean nothing was found,
+e.g. "no". Fields and annotation sets have a `metadata` dict for anything else
+about how they were made.
 
-A layer's spans are grouped into parts, one per text part of a message:
-`message_id` and `content_index` find the text, and `starts` and `ends` are
-Unicode code-point offsets (Python `str` indices) into it. The text is
+An annotation set's spans are grouped into parts, one per text part of a
+message: `message_id` and `content_index` find the text, and `starts` and
+`ends` are Unicode code-point offsets (Python `str` indices) into it. The text is
 `ContentText.text` for text parts, `ContentReasoning.reasoning` for reasoning
 parts that aren't redacted, and the message's `content` when that is a string
 (then `content_index` is None). See `text_parts`.
@@ -49,7 +49,7 @@ class CategoricalField(_FormatModel):
     """A field whose value is one of a list of options, e.g. a classifier's answer."""
 
     name: str = Field(min_length=1)
-    """Name of the field, unique within its layer."""
+    """Name of the field, unique within its annotation set."""
 
     description: str | None = None
     """What the field holds, e.g. the question a classifier answers."""
@@ -99,7 +99,7 @@ class NumericField(_FormatModel):
     """A field whose value is a number, e.g. a probe's value."""
 
     name: str = Field(min_length=1)
-    """Name of the field, unique within its layer."""
+    """Name of the field, unique within its annotation set."""
 
     description: str | None = None
     """What the field holds, e.g. what a probe detects."""
@@ -113,7 +113,7 @@ class NumericField(_FormatModel):
 AnnotationField = Annotated[
     CategoricalField | NumericField, Field(discriminator="type")
 ]
-"""A field of a layer, told apart by its `type`."""
+"""A field of an annotation set, told apart by its `type`."""
 
 
 class TextRange(NamedTuple):
@@ -203,23 +203,25 @@ class AnnotatedPart(_FormatModel):
         ]
 
 
-class AnnotationLayer(_FormatModel):
-    """Values of some fields on every span of a layer."""
+class AnnotationSet(_FormatModel):
+    """Values of some fields on every span of an annotation set."""
 
     name: str = Field(min_length=1)
-    """Name of the layer, unique within its score, e.g. "paragraph labels"."""
+    """Name of the set, unique within its score, e.g. "paragraph labels"."""
 
-    unit: str = Field(min_length=1)
-    """What one span is, for display, e.g. "paragraph" or "token"."""
+    unit: Annotated[str, Field(min_length=1)] | None = None
+    """What one span is, for display only, e.g. "paragraph" or "token".
+
+    None if not given; a viewer then calls each one a "span"."""
 
     source: str
     """What produced the values, e.g. a classifier's or probe runner's name."""
 
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
-    """How the layer was made, e.g. `{"tokenizer": "tiktoken/o200k_base"}`."""
+    """How the set was made, e.g. `{"tokenizer": "tiktoken/o200k_base"}`."""
 
     description: str | None = None
-    """What the layer holds."""
+    """What the set holds."""
 
     fields: list[AnnotationField]
     """Fields with a value on every span (at least one, names all different)."""
@@ -228,13 +230,13 @@ class AnnotationLayer(_FormatModel):
     """Parts with spans, in transcript order, at most one per message part."""
 
     @model_validator(mode="after")
-    def _check_parts(self) -> "AnnotationLayer":
+    def _check_parts(self) -> "AnnotationSet":
         names = [field.name for field in self.fields]
         if not names:
-            raise ValueError(f"Layer '{self.name}' needs at least one field")
+            raise ValueError(f"Annotation set '{self.name}' needs at least one field")
         if len(set(names)) != len(names):
             raise ValueError(
-                f"Field names of layer '{self.name}' are repeated: {names}"
+                f"Field names of annotation set '{self.name}' are repeated: {names}"
             )
         categorical = {
             field.name: field
@@ -274,19 +276,19 @@ class AnnotationLayer(_FormatModel):
 
 
 class TextAnnotations(_FormatModel):
-    """The annotation layers of one score."""
+    """The annotation sets of one score."""
 
-    version: Literal[1] = 1
+    version: Literal[2] = 2
     """Version of this format."""
 
-    layers: list[AnnotationLayer]
-    """Layers, with names all different."""
+    sets: list[AnnotationSet]
+    """Annotation sets, with names all different."""
 
     @model_validator(mode="after")
-    def _check_layers(self) -> "TextAnnotations":
-        names = [layer.name for layer in self.layers]
+    def _check_sets(self) -> "TextAnnotations":
+        names = [annotation_set.name for annotation_set in self.sets]
         if len(set(names)) != len(names):
-            raise ValueError(f"Layer names are repeated: {names}")
+            raise ValueError(f"Annotation set names are repeated: {names}")
         return self
 
 
@@ -430,10 +432,12 @@ def check_spans_fit(part: AnnotatedPart, text: str) -> None:
         )
 
 
-def layer_texts(layer: AnnotationLayer, messages: Sequence[ChatMessage]) -> list[str]:
-    """The text of each part of a layer, after checking the parts against the messages.
+def set_texts(
+    annotation_set: AnnotationSet, messages: Sequence[ChatMessage]
+) -> list[str]:
+    """The text of each part of an annotation set, checked against the messages.
 
-    Checks what `AnnotationLayer` can't check without the messages: each part
+    Checks what `AnnotationSet` can't check without the messages: each part
     is one of the messages' `text_parts`, the parts are in transcript order,
     and each part's spans lie within its text.
 
@@ -447,18 +451,19 @@ def layer_texts(layer: AnnotationLayer, messages: Sequence[ChatMessage]) -> list
     }
     texts: list[str] = []
     previous = -1
-    for part in layer.parts:
+    for part in annotation_set.parts:
         where = describe_part(part.message_id, part.content_index)
         found = positions.get((part.message_id, part.content_index))
         if found is None:
             raise ValueError(
-                f"Layer '{layer.name}' has spans for the {where}, which isn't a "
-                "text part of the messages"
+                f"Annotation set '{annotation_set.name}' has spans for the {where}, "
+                "which isn't a text part of the messages"
             )
         position, text = found
         if position <= previous:
             raise ValueError(
-                f"The {where} comes before the part before it in layer '{layer.name}'"
+                f"The {where} comes before the part before it in annotation set "
+                f"'{annotation_set.name}'"
             )
         previous = position
         check_spans_fit(part, text)

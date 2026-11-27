@@ -1,36 +1,36 @@
 """A table of annotated spans, for analysis with pandas.
 
 `spans_df` reads the text annotations in eval logs into a data frame with one
-row per span per layer per sample. Its `sample_id`, `eval_id` and `log`
-columns are those of the `inspect_ai.analysis` data frames, so it joins onto
-`samples_df` (on `sample_id`) and `messages_df` (on `sample_id` and
-`message_id`). `align` puts side by side the fields of layers that annotate
-the same spans, and `roll_up` aggregates a layer's values over the spans of a
-coarser one, e.g. probe values on tokens over paragraphs. Both take and give a
-table like `spans_df`'s, so they compose.
+row per span per annotation set per sample. Its `sample_id`, `eval_id` and
+`log` columns are those of the `inspect_ai.analysis` data frames, so it joins
+onto `samples_df` (on `sample_id`) and `messages_df` (on `sample_id` and
+`message_id`). `align` puts side by side the fields of annotation sets that
+annotate the same spans, and `roll_up` aggregates a set's values over the
+spans of a coarser one, e.g. probe values on tokens over paragraphs. Both
+take and give a table like `spans_df`'s, so they compose.
 
 The columns, in order:
 
 - `sample_id`, `eval_id`, `log`: as in `messages_df`.
 - `id`, `epoch`: the sample's dataset id and epoch, as in `samples_df`.
-- `score`, `layer`, `unit`: the score holding the layer, and the layer's name
-  and unit.
+- `score`, `annotation_set`, `unit`: the score holding the annotation set, and
+  the set's name and unit (null if it has none).
 - `message_id`, `message_index`, `role`, `content_index`, `start`, `end`:
   where the span is. `message_index` is the message's 0-based position in the
   sample's messages. It isn't `messages_df`'s `order`, which counts from 1
   over messages read from the model events (and so can include a model output
   that isn't in the sample's messages); join with `messages_df` on
   `message_id`. `content_index` is null for a message's string content.
-- `span_index`: 0-based position of the span among its layer's spans in the
+- `span_index`: 0-based position of the span among its set's spans in the
   sample, in transcript order.
 - `text` (with `text=True`): the span's text.
 - `field_<name>` for each field: an option for a categorical field, a number
-  for a numeric one, and null on rows of layers without that field.
+  for a numeric one, and null on rows of sets without that field.
 - `prob_<field>_<option>` (with `probabilities=True`) for each option of each
   categorical field with probabilities, null on spans without them.
 
 Columns are backed by Arrow types, as in `inspect_ai.analysis`. The options
-and negative options of each layer's categorical fields are kept in
+and negative options of each set's categorical fields are kept in
 `DataFrame.attrs[CATEGORICAL_FIELDS]`, for `roll_up`. pandas keeps `attrs`
 when filtering or sorting but drops them when merging.
 """
@@ -51,11 +51,11 @@ from inspect_ai.log import EvalLogInfo, EvalSample, read_eval_log_sample
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
     AnnotatedPart,
-    AnnotationLayer,
+    AnnotationSet,
     CategoricalField,
     Role,
     TextAnnotations,
-    layer_texts,
+    set_texts,
     text_parts,
 )
 
@@ -82,7 +82,7 @@ SPAN_COLUMNS = [
     "id",
     "epoch",
     "score",
-    "layer",
+    "annotation_set",
     "unit",
     "message_id",
     "message_index",
@@ -99,11 +99,11 @@ FIELD_PREFIX = "field_"
 PROBABILITY_PREFIX = "prob_"
 
 POSITION = ["sample_id", "message_id", "content_index", "start", "end"]
-"""Columns that say where a span is: spans of two layers are the same if these are."""
+"""Columns that say where a span is: spans of two sets are the same if these are."""
 
 CATEGORICAL_FIELDS = "categorical_fields"
-"""Key in `DataFrame.attrs` of each layer's categorical fields: layer name to
-field name to its `FieldOptions`."""
+"""Key in `DataFrame.attrs` of each annotation set's categorical fields: set
+name to field name to its `FieldOptions`."""
 
 INTEGER_COLUMNS = {
     "epoch",
@@ -125,8 +125,8 @@ class FieldOptions(TypedDict):
     negative: list[str]
 
 
-LayerFields = dict[str, dict[str, FieldOptions]]
-"""Layer name to categorical field name to its options."""
+SetFields = dict[str, dict[str, FieldOptions]]
+"""Annotation set name to categorical field name to its options."""
 
 
 class SampleKey(NamedTuple):
@@ -140,41 +140,41 @@ class SampleKey(NamedTuple):
 
 
 class FieldColumn(NamedTuple):
-    """Which layer first gave a field column its type."""
+    """Which annotation set first gave a field column its type."""
 
     numeric: bool
-    layer: str
+    annotation_set: str
 
 
 def spans_df(
     logs: LogPaths,
-    layers: Sequence[str] | None = None,
+    sets: Sequence[str] | None = None,
     text: bool = False,
     probabilities: bool = False,
 ) -> pd.DataFrame:
-    """Read the text annotations of eval logs: one row per span per layer per sample.
+    """Read the text annotations of eval logs: one row per span per set per sample.
 
     Samples are read one at a time, in the order `samples_df` gives them, and
     each score's annotations are checked against the sample's messages. Rows
     are in the order of the logs, then the samples, then the scores and the
-    layers within each score, then the spans. See the module docstring for
-    the columns.
+    annotation sets within each score, then the spans. See the module
+    docstring for the columns.
 
     Args:
         logs: Log files or directories of logs.
-        layers: Names of the layers to read, or None for all.
+        sets: Names of the annotation sets to read, or None for all.
         text: Add a `text` column with each span's text.
         probabilities: Add a `prob_<field>_<option>` column for each option
             of each categorical field with probabilities.
 
     Raises:
-        TypeError: If `layers` is a string rather than a list of them.
+        TypeError: If `sets` is a string rather than a list of them.
         ValueError: If a score's annotations are invalid or don't fit the
             sample's messages (the message names the log, sample and score),
-            fields of the same name are categorical in one layer and numeric
-            in another, or a layer in `layers` isn't in any of the logs.
+            fields of the same name are categorical in one set and numeric
+            in another, or a set in `sets` isn't in any of the logs.
     """
-    selected = None if layers is None else set(layer_names(layers))
+    selected = None if sets is None else set(set_names(sets))
     table = SpanTable(text, probabilities)
     for key in sample_keys(logs):
         sample = read_eval_log_sample(
@@ -186,11 +186,11 @@ def spans_df(
         )
         table.add_sample(key, sample, selected)
     if selected is not None:
-        missing = sorted(selected - table.layers_found)
+        missing = sorted(selected - table.sets_found)
         if missing:
             raise ValueError(
-                f"No layers named {missing} in the logs (found "
-                f"{sorted(table.layers_found)})"
+                f"No annotation sets named {missing} in the logs (found "
+                f"{sorted(table.sets_found)})"
             )
     return table.data_frame()
 
@@ -213,20 +213,20 @@ def sample_keys(logs: LogPaths) -> list[SampleKey]:
     ]
 
 
-def layer_names(layers: Sequence[str]) -> list[str]:
-    """Check that layer names are a list of different names.
+def set_names(sets: Sequence[str]) -> list[str]:
+    """Check that annotation set names are a list of different names.
 
     Raises:
-        TypeError: If `layers` is a string rather than a list of them.
-        ValueError: If `layers` is empty or repeats a name.
+        TypeError: If `sets` is a string rather than a list of them.
+        ValueError: If `sets` is empty or repeats a name.
     """
-    if isinstance(layers, str):
-        raise TypeError(f"Give layers as a list, not the string {layers!r}")
-    names = list(layers)
+    if isinstance(sets, str):
+        raise TypeError(f"Give annotation sets as a list, not the string {sets!r}")
+    names = list(sets)
     if not names:
-        raise ValueError("Give at least one layer")
+        raise ValueError("Give at least one annotation set")
     if len(set(names)) != len(names):
-        raise ValueError(f"Layer names are repeated: {names}")
+        raise ValueError(f"Annotation set names are repeated: {names}")
     return names
 
 
@@ -259,14 +259,14 @@ class SpanTable:
         self.field_types: dict[str, FieldColumn] = {}
         self.probability_columns: dict[str, list[object]] = {}
         self.probability_sources: dict[str, tuple[str, str]] = {}
-        self.categorical: LayerFields = {}
-        self.layers_found: set[str] = set()
+        self.categorical: SetFields = {}
+        self.sets_found: set[str] = set()
         self.rows = 0
 
     def add_sample(
         self, key: SampleKey, sample: EvalSample, selected: Collection[str] | None
     ) -> None:
-        """Add the spans of every selected layer of every score of a sample.
+        """Add the spans of every selected annotation set of every score of a sample.
 
         Raises:
             ValueError: If a score's annotations are invalid or don't fit the
@@ -282,10 +282,10 @@ class SpanTable:
                 annotations = TextAnnotations.model_validate(
                     metadata[TEXT_ANNOTATIONS_KEY]
                 )
-                layers = [
-                    (layer, layer_texts(layer, sample.messages))
-                    for layer in annotations.layers
-                    if selected is None or layer.name in selected
+                sets = [
+                    (annotation_set, set_texts(annotation_set, sample.messages))
+                    for annotation_set in annotations.sets
+                    if selected is None or annotation_set.name in selected
                 ]
             except ValueError as ex:
                 raise ValueError(
@@ -294,20 +294,20 @@ class SpanTable:
                 ) from ex
             if positions is None:
                 positions = message_positions(sample)
-            for layer, texts in layers:
-                self.add_layer(key, score_name, layer, texts, positions)
+            for annotation_set, texts in sets:
+                self.add_set(key, score_name, annotation_set, texts, positions)
 
-    def add_layer(
+    def add_set(
         self,
         key: SampleKey,
         score: str,
-        layer: AnnotationLayer,
+        annotation_set: AnnotationSet,
         texts: Sequence[str],
         positions: dict[str, MessagePosition],
     ) -> None:
-        """Add the spans of one layer, whose parts have been checked against `texts`."""
-        self.layers_found.add(layer.name)
-        count = layer.span_count()
+        """Add the spans of an annotation set, whose parts fit `texts`."""
+        self.sets_found.add(annotation_set.name)
+        count = annotation_set.span_count()
         fixed = self.columns
         for name, value in [
             ("sample_id", key.sample_id),
@@ -316,12 +316,12 @@ class SpanTable:
             ("id", key.id),
             ("epoch", key.epoch),
             ("score", score),
-            ("layer", layer.name),
-            ("unit", layer.unit),
+            ("annotation_set", annotation_set.name),
+            ("unit", annotation_set.unit),
         ]:
             fixed[name].extend([value] * count)
         fixed["span_index"].extend(range(count))
-        for part, part_text in zip(layer.parts, texts, strict=True):
+        for part, part_text in zip(annotation_set.parts, texts, strict=True):
             spans = len(part.starts)
             position = positions[part.message_id]
             fixed["message_id"].extend([part.message_id] * spans)
@@ -332,60 +332,65 @@ class SpanTable:
             fixed["end"].extend(part.ends)
             if self.text:
                 fixed[TEXT_COLUMN].extend(part_text[s:e] for s, e in part.ranges())
-        values = self.field_values(layer)
+        values = self.field_values(annotation_set)
         extend_padded(self.fields, values, self.rows, count)
         if self.probabilities:
             extend_padded(
                 self.probability_columns,
-                self.probability_values(layer),
+                self.probability_values(annotation_set),
                 self.rows,
                 count,
             )
         self.rows += count
 
-    def field_values(self, layer: AnnotationLayer) -> dict[str, list[object]]:
-        """Each field's column name and its values on the layer's spans.
+    def field_values(self, annotation_set: AnnotationSet) -> dict[str, list[object]]:
+        """Each field's column name and its values on the annotation set's spans.
 
         Raises:
             ValueError: If a field's column already holds values of the
-                other type, from a layer with a field of the same name.
+                other type, from a set with a field of the same name.
         """
         values: dict[str, list[object]] = {}
-        for field in layer.fields:
+        for field in annotation_set.fields:
             column = FIELD_PREFIX + field.name
             numeric = not isinstance(field, CategoricalField)
             first = self.field_types.setdefault(
-                column, FieldColumn(numeric, layer.name)
+                column, FieldColumn(numeric, annotation_set.name)
             )
             if first.numeric != numeric:
                 raise ValueError(
-                    f"Field '{field.name}' is {describe_type(first.numeric)} in layer "
-                    f"'{first.layer}' but {describe_type(numeric)} in layer "
-                    f"'{layer.name}', so they can't share a column: choose one of "
-                    "the layers with `layers`"
+                    f"Field '{field.name}' is {describe_type(first.numeric)} in "
+                    f"annotation set '{first.annotation_set}' but "
+                    f"{describe_type(numeric)} in annotation set "
+                    f"'{annotation_set.name}', so they can't share a column: "
+                    "choose one of the sets with `sets`"
                 )
             if isinstance(field, CategoricalField):
-                options = self.categorical.setdefault(layer.name, {}).setdefault(
-                    field.name, FieldOptions(options=[], negative=[])
-                )
+                options = self.categorical.setdefault(
+                    annotation_set.name, {}
+                ).setdefault(field.name, FieldOptions(options=[], negative=[]))
                 add_new(options["options"], field.options)
                 add_new(options["negative"], field.negative)
             values[column] = [
-                value for part in layer.parts for value in part.values[field.name]
+                value
+                for part in annotation_set.parts
+                for value in part.values[field.name]
             ]
         return values
 
-    def probability_values(self, layer: AnnotationLayer) -> dict[str, list[object]]:
-        """Each probability column of the layer and its values on the layer's spans.
+    def probability_values(
+        self, annotation_set: AnnotationSet
+    ) -> dict[str, list[object]]:
+        """Each probability column of the annotation set and its values on its spans.
 
         Raises:
             ValueError: If two different fields and options give the same
                 column name.
         """
         values: dict[str, list[object]] = {}
-        for field in layer.fields:
+        for field in annotation_set.fields:
             if not isinstance(field, CategoricalField) or not any(
-                field.name in part.probabilities for part in layer.parts
+                field.name in part.probabilities for part in annotation_set.parts
             ):
                 continue
             for index, option in enumerate(field.options):
@@ -401,13 +406,13 @@ class SpanTable:
                     )
                 values[column] = [
                     probability
-                    for part in layer.parts
+                    for part in annotation_set.parts
                     for probability in part_probabilities(part, field.name, index)
                 ]
         return values
 
     def data_frame(self) -> pd.DataFrame:
-        """The span table, with each layer's categorical fields in its `attrs`."""
+        """The span table, with each set's categorical fields in its `attrs`."""
         import pandas as pd
         import pyarrow as pa
 
@@ -464,37 +469,38 @@ def describe_type(numeric: bool) -> str:
     return "numeric" if numeric else "categorical"
 
 
-def align(spans: pd.DataFrame, layers: Sequence[str]) -> pd.DataFrame:
-    """One row per span that is in every one of some layers, with all their fields.
+def align(spans: pd.DataFrame, sets: Sequence[str]) -> pd.DataFrame:
+    """One row per span that is in every one of some annotation sets, with their fields.
 
     Spans are the same if they have the same `sample_id`, `message_id`,
     `content_index`, `start` and `end`. Each row keeps the position columns
     of the span table and the field and probability columns of every listed
-    layer. `layer` is the layers' names joined with "+", `score` and `unit`
-    are their different scores and units joined with "+", and `span_index`
-    counts the aligned spans of each sample in transcript order.
+    set. `annotation_set` is the sets' names joined with "+", `score` is
+    their different scores joined with "+", `unit` is their different units
+    joined with "+" (null if none of them has one), and `span_index` counts
+    the aligned spans of each sample in transcript order.
 
     Args:
         spans: A span table, e.g. from `spans_df`.
-        layers: Names of the layers.
+        sets: Names of the annotation sets.
 
     Raises:
-        TypeError: If `layers` is a string rather than a list of them.
-        ValueError: If `layers` is empty or repeats a name, a layer isn't in
+        TypeError: If `sets` is a string rather than a list of them.
+        ValueError: If `sets` is empty or repeats a name, a set isn't in
             `spans` or has two spans at the same position in a sample (e.g.
-            the same log is in `spans` twice), or two layers have a field of
+            the same log is in `spans` twice), or two sets have a field of
             the same name.
     """
-    names = layer_names(layers)
-    rows = [layer_rows(spans, name) for name in names]
-    own = [layer_columns(layer) for layer in rows]
+    names = set_names(sets)
+    rows = [set_rows(spans, name) for name in names]
+    own = [set_columns(set_spans) for set_spans in rows]
     owners: dict[str, str] = {}
     for name, columns in zip(names, own, strict=True):
         for column in columns:
             if column.startswith(FIELD_PREFIX) and column in owners:
                 raise ValueError(
-                    f"Layers '{owners[column]}' and '{name}' both have field "
-                    f"'{column.removeprefix(FIELD_PREFIX)}'"
+                    f"Annotation sets '{owners[column]}' and '{name}' both have "
+                    f"field '{column.removeprefix(FIELD_PREFIX)}'"
                 )
             owners[column] = name
 
@@ -503,26 +509,24 @@ def align(spans: pd.DataFrame, layers: Sequence[str]) -> pd.DataFrame:
         _score0=rows[0]["score"], _unit0=rows[0]["unit"]
     )
     for index in range(1, len(names)):
-        layer = rows[index][[*POSITION, *own[index]]].assign(
+        set_spans = rows[index][[*POSITION, *own[index]]].assign(
             **{
                 f"_score{index}": rows[index]["score"],
                 f"_unit{index}": rows[index]["unit"],
             }
         )
-        merged = merged.merge(layer, on=POSITION, how="inner")
+        merged = merged.merge(set_spans, on=POSITION, how="inner")
 
-    merged["layer"] = "+".join(names)
+    merged["annotation_set"] = "+".join(names)
     for column in ("score", "unit"):
         parts = merged[[f"_{column}{index}" for index in range(len(names))]]
-        merged[column] = [
-            "+".join(dict.fromkeys(row)) for row in parts.itertuples(index=False)
-        ]
+        merged[column] = [join_distinct(row) for row in parts.itertuples(index=False)]
     merged = in_transcript_order(merged)
     merged["span_index"] = merged.groupby("sample_id", sort=False).cumcount()
     kept = set().union(*own)
     columns = span_columns(spans) + [c for c in spans.columns if c in kept]
     result = merged[columns].astype(spans[columns].dtypes.to_dict())
-    fields = layer_fields(spans)
+    fields = set_fields(spans)
     result.attrs[CATEGORICAL_FIELDS] = {
         "+".join(names): {
             field: options
@@ -533,38 +537,49 @@ def align(spans: pd.DataFrame, layers: Sequence[str]) -> pd.DataFrame:
     return result
 
 
+def join_distinct(values: Iterable[object]) -> str | None:
+    """The distinct values that aren't null, joined with "+"; None if there are none.
+
+    Args:
+        values: Strings, or nulls (None, `pd.NA` or NaN).
+    """
+    found = [value for value in values if isinstance(value, str)]
+    return "+".join(dict.fromkeys(found)) or None
+
+
 def roll_up(
     spans: pd.DataFrame, fine: str, coarse: str, agg: Aggregation = "mean"
 ) -> pd.DataFrame:
-    """The spans of a coarse layer, with the fields of a fine layer aggregated over each.
+    """A coarse annotation set's spans, with a fine set's fields aggregated over each.
 
     A fine span is in a coarse span if both are in the same sample, message
     and part, and the fine span starts at or after the coarse span's start
     and ends at or before its end. Fine spans that are in no coarse span are
     left out.
 
-    Each numeric field of the fine layer gives a column `field_<name>`: its
+    Each numeric field of the fine set gives a column `field_<name>`: its
     values on the fine spans in each coarse span, aggregated with `agg`. A
     coarse span without fine spans gets 0 for "sum" and "count" and null
-    otherwise. Each categorical field of the fine layer gives the most
+    otherwise. Each categorical field of the fine set gives the most
     frequent of its options that aren't negative on those spans, or the most
     frequent negative option if all are negative (the earlier option in the
     field's options on ties), and null if there are none.
 
     Args:
         spans: A span table, e.g. from `spans_df`, with the options of the
-            fine layer's categorical fields in its `attrs`.
-        fine: Name of the layer whose values are aggregated, e.g. tokens.
-        coarse: Name of the layer whose spans they are aggregated over, e.g.
-            paragraphs.
+            fine set's categorical fields in its `attrs`.
+        fine: Name of the annotation set whose values are aggregated, e.g.
+            tokens.
+        coarse: Name of the annotation set whose spans they are aggregated
+            over, e.g. paragraphs.
         agg: How to aggregate numeric fields: "mean", "max", "min", "sum" or
             "count" (the number of fine spans with a value).
 
     Raises:
         ValueError: If `agg` isn't one of these, `fine` and `coarse` are the
             same, either isn't in `spans` or has two spans at the same
-            position in a sample, the layers both have a field of the same
-            name, or the options of one of the fine layer's categorical fields
+            position in a sample, the sets both have a field of the same
+            name, or the options of one of the fine set's categorical fields
             aren't in `spans.attrs` (pandas drops them when merging data
             frames, so roll up first).
     """
@@ -576,20 +591,20 @@ def roll_up(
             f"Unknown aggregation {agg!r} (expected one of {AGGREGATIONS})"
         )
     if fine == coarse:
-        raise ValueError(f"Can't roll layer '{fine}' up into itself")
-    fine_rows = layer_rows(spans, fine)
-    coarse_rows = layer_rows(spans, coarse)
-    coarse_columns = layer_columns(coarse_rows)
+        raise ValueError(f"Can't roll annotation set '{fine}' up into itself")
+    fine_rows = set_rows(spans, fine)
+    coarse_rows = set_rows(spans, coarse)
+    coarse_columns = set_columns(coarse_rows)
     fine_fields = [
-        column for column in layer_columns(fine_rows) if column.startswith(FIELD_PREFIX)
+        column for column in set_columns(fine_rows) if column.startswith(FIELD_PREFIX)
     ]
     clash = [column for column in fine_fields if column in coarse_columns]
     if clash:
         raise ValueError(
-            f"Layers '{fine}' and '{coarse}' both have fields "
+            f"Annotation sets '{fine}' and '{coarse}' both have fields "
             f"{[column.removeprefix(FIELD_PREFIX) for column in clash]}"
         )
-    fields = layer_fields(spans)
+    fields = set_fields(spans)
     fine_options = fields.get(fine, {})
     categorical = {
         column: column.removeprefix(FIELD_PREFIX)
@@ -599,9 +614,9 @@ def roll_up(
     for name in categorical.values():
         if name not in fine_options:
             raise ValueError(
-                f"The options of field '{name}' of layer '{fine}' aren't in the "
-                "span table's attrs: pandas drops them when merging data frames, "
-                "so roll up before joining other tables"
+                f"The options of field '{name}' of annotation set '{fine}' aren't "
+                "in the span table's attrs: pandas drops them when merging data "
+                "frames, so roll up before joining other tables"
             )
 
     containing = containing_spans(fine_rows, coarse_rows)
@@ -657,7 +672,7 @@ def roll_up(
 def containing_spans(fine: pd.DataFrame, coarse: pd.DataFrame) -> npt.NDArray[np.int64]:
     """For each fine span, the row of the coarse span it's in, or -1 if none.
 
-    The spans of one layer in one part don't overlap, so the only coarse span
+    The spans of one set in one part don't overlap, so the only coarse span
     that can hold a fine span is the last one starting at or before it.
     """
     import numpy as np
@@ -738,33 +753,35 @@ def most_frequent(
     return [choose(counts) for counts in found]
 
 
-def layer_rows(spans: pd.DataFrame, layer: str) -> pd.DataFrame:
-    """The rows of one layer, with a fresh index.
+def set_rows(spans: pd.DataFrame, annotation_set: str) -> pd.DataFrame:
+    """The rows of one annotation set, with a fresh index.
 
     Raises:
-        ValueError: If the layer has no rows, is in more than one score of a
+        ValueError: If the set has no rows, is in more than one score of a
             sample, or has two spans at the same position in a sample.
     """
-    rows = spans.loc[spans["layer"] == layer].reset_index(drop=True)
+    rows = spans.loc[spans["annotation_set"] == annotation_set].reset_index(drop=True)
     if rows.empty:
-        found = list(dict.fromkeys(spans["layer"]))
-        raise ValueError(f"No spans of layer '{layer}' (found layers {found})")
+        found = list(dict.fromkeys(spans["annotation_set"]))
+        raise ValueError(
+            f"No spans of annotation set '{annotation_set}' (found sets {found})"
+        )
     scores = rows.groupby("sample_id", sort=False)["score"].unique()
     for sample_id, names in scores.items():
         if len(names) > 1:
             raise ValueError(
-                f"Layer '{layer}' is in more than one score of sample {sample_id}: "
-                f"{list(names)}"
+                f"Annotation set '{annotation_set}' is in more than one score of "
+                f"sample {sample_id}: {list(names)}"
             )
     if rows.duplicated(subset=POSITION).any():
         raise ValueError(
-            f"Layer '{layer}' has more than one span at the same position in a "
-            "sample: is a log in the table twice?"
+            f"Annotation set '{annotation_set}' has more than one span at the same "
+            "position in a sample: is a log in the table twice?"
         )
     return rows
 
 
-def layer_columns(rows: pd.DataFrame) -> list[str]:
+def set_columns(rows: pd.DataFrame) -> list[str]:
     """The field and probability columns with values on some of the rows."""
     return [
         column
@@ -781,9 +798,9 @@ def span_columns(spans: pd.DataFrame) -> list[str]:
     ]
 
 
-def layer_fields(spans: pd.DataFrame) -> LayerFields:
-    """The categorical fields of each layer, from the table's `attrs` (if there)."""
-    return cast(LayerFields, spans.attrs.get(CATEGORICAL_FIELDS, {}))
+def set_fields(spans: pd.DataFrame) -> SetFields:
+    """The categorical fields of each set, from the table's `attrs` (if there)."""
+    return cast(SetFields, spans.attrs.get(CATEGORICAL_FIELDS, {}))
 
 
 def in_transcript_order(spans: pd.DataFrame) -> pd.DataFrame:
