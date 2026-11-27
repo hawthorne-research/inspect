@@ -30,6 +30,17 @@ Probe values on every token of the same transcript, hovering the token "grader":
 
 Both pictures show a made-up demo transcript with made-up labels and values. You can make the same log yourself (see [Try the demo](#try-the-demo)).
 
+In a log's **Analytics** tab, next to Samples, the "Along the transcript" view plots annotation values across the log's samples, one panel per sample:
+
+- x is the position of each span (for example each paragraph) in the sample, in the layer you choose under **Spans**.
+- Up to two numeric fields are drawn as lines, the second on its own axis on the right. Each can have a dashed reference line and a fixed range. A field from a layer with other spans (for example per-token probe values) is first aggregated onto those spans, with the mean, max, min, sum or count.
+- **Markers** draws a vertical line at every span where a categorical field isn't one of its negative options, in that option's colour.
+- Grey lines mark where each message starts.
+- **Group by** titles and groups the panels by a sample score.
+- Clicking a panel opens that sample's Messages tab at that span's message.
+
+The tab loads the samples when you open it, four at a time, and keeps only their annotations.
+
 ## Setup
 
 You need [uv](https://docs.astral.sh/uv/) 0.13.4 or later, Node.js 22.13 or later and [pnpm](https://pnpm.io/) 11.
@@ -281,7 +292,7 @@ Each scorer stores its layers in `Score.metadata["text_annotations"]`:
 
 ## Limitations
 
-- Annotations are shown only in the Messages tab, one layer at a time.
+- Annotations are shown in the Messages tab one layer at a time, and the Analytics tab has one view so far.
 - Tool-call arguments can't be annotated.
 - Inspect stores a score's metadata three times in a log (in the sample, in the transcript's score event and in the reductions). Compression removes most of the cost on disk, but token-level layers still make a log several times larger.
 - The viewer that `inspect view` serves on its own isn't rebuilt; use the viewer from source as above.
