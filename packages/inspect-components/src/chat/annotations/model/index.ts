@@ -61,3 +61,23 @@ export { annotationView, spanStyle, spanValue } from "./view";
 
 export type { SpanLocation, StripSegment } from "./strip";
 export { buildStrip, kMaxStripSegments } from "./strip";
+
+export type {
+  Aggregation,
+  FieldCell,
+  FieldColumn,
+  FieldOptions,
+  LayerFields,
+  ProbabilityColumn,
+  SampleSource,
+  SpanRow,
+  SpanRowOptions,
+  SpanRows,
+} from "./table";
+export {
+  alignLayers,
+  fieldColumn,
+  probabilityColumn,
+  rollUp,
+  spanRows,
+} from "./table";

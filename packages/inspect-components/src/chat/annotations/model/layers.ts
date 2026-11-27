@@ -22,11 +22,15 @@ export interface ResolvedPart extends Pick<
   messageId: string;
   /** Position of the message in the sample's messages. */
   messagePosition: number;
+  role: ChatMessage["role"];
   contentIndex: number | null;
   kind: "text" | "reasoning";
   text: string;
   starts: readonly number[];
   ends: readonly number[];
+  /** `starts`/`ends` as stored: code-point offsets into `text`. */
+  codePointStarts: readonly number[];
+  codePointEnds: readonly number[];
 }
 
 /** A layer whose parts all resolved against the sample's messages. */
@@ -128,7 +132,7 @@ export const resolveLayer = (
     const key = partKey(part.messageId, part.contentIndex);
     const message = messages[messagePosition];
     const target = message ? partText(message, part.contentIndex) : undefined;
-    if (!target) {
+    if (!message || !target) {
       return fail(
         `layer "${layer.name}": ${key} is not a text or reasoning part`
       );
@@ -145,11 +149,14 @@ export const resolveLayer = (
       index: parts.length,
       messageId: part.messageId,
       messagePosition,
+      role: message.role,
       contentIndex: part.contentIndex,
       kind: target.kind,
       text: target.text,
       starts: part.starts.map((s) => offsets[s] ?? 0),
       ends: part.ends.map((e) => offsets[e] ?? 0),
+      codePointStarts: part.starts,
+      codePointEnds: part.ends,
       labels: part.labels,
       values: part.values,
       probabilities: part.probabilities,

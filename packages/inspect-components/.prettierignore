@@ -1,1 +1,4 @@
 *.module.css.d.ts
+# Written by Python (proto/text_annotations/examples/make_table_fixture.py),
+# whose test checks them byte for byte.
+src/chat/annotations/model/fixtures/

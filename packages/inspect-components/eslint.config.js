@@ -30,7 +30,7 @@ export default tseslint.config(
           patterns: [
             {
               regex:
-                "^(?!\\./|@tsmono/util$|@tsmono/inspect-common/(types|testing)$|vitest$)",
+                "^(?!\\./|@tsmono/util$|@tsmono/inspect-common/(types|testing|normalize)$|vitest$)",
               message:
                 "The annotation model imports only model/ files and React-free packages listed in eslint.config.js.",
             },
