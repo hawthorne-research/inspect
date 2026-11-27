@@ -22,6 +22,9 @@ interface AlongTranscriptControlsProps {
   layers: readonly LayerInfo[];
   /** Scores the panels can be grouped by. */
   scores: readonly string[];
+  /** Leaves out the settings that only arrange several samples' panels
+   *  (group by, columns). */
+  oneSample?: boolean;
   onChange: (params: AlongTranscriptParams) => void;
 }
 
@@ -43,6 +46,7 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
   view,
   layers,
   scores,
+  oneSample = false,
   onChange,
 }) => {
   const unit = layers.find((layer) => layer.name === params.x)?.unit ?? "span";
@@ -192,39 +196,43 @@ export const AlongTranscriptControls: FC<AlongTranscriptControlsProps> = ({
           ))}
         </select>
       </Control>
-      <Control label="Group by">
-        <select
-          aria-label="Group by"
-          className={styles.select}
-          value={params.groupBy ?? kNone}
-          onChange={(e) =>
-            update({
-              groupBy: e.target.value === kNone ? null : e.target.value,
-            })
-          }
-        >
-          <option value={kNone}>none</option>
-          {scores.map((score) => (
-            <option key={score} value={score}>
-              {score}
-            </option>
-          ))}
-        </select>
-      </Control>
-      <Control label="Columns">
-        <select
-          aria-label="Columns"
-          className={styles.select}
-          value={params.columns}
-          onChange={(e) => update({ columns: Number(e.target.value) })}
-        >
-          {Array.from({ length: kMaxColumns }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </Control>
+      {oneSample ? null : (
+        <>
+          <Control label="Group by">
+            <select
+              aria-label="Group by"
+              className={styles.select}
+              value={params.groupBy ?? kNone}
+              onChange={(e) =>
+                update({
+                  groupBy: e.target.value === kNone ? null : e.target.value,
+                })
+              }
+            >
+              <option value={kNone}>none</option>
+              {scores.map((score) => (
+                <option key={score} value={score}>
+                  {score}
+                </option>
+              ))}
+            </select>
+          </Control>
+          <Control label="Columns">
+            <select
+              aria-label="Columns"
+              className={styles.select}
+              value={params.columns}
+              onChange={(e) => update({ columns: Number(e.target.value) })}
+            >
+              {Array.from({ length: kMaxColumns }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </Control>
+        </>
+      )}
       <label className={styles.control}>
         <input
           type="checkbox"

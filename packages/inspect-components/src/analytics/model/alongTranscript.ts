@@ -4,6 +4,7 @@ import { isRecord } from "@tsmono/util";
 import {
   alignLayers,
   fieldColumn,
+  layerId,
   rollUp,
   spanCountLabel,
   type Aggregation,
@@ -11,6 +12,7 @@ import {
   type FieldCell,
   type FieldColumn,
   type LayerFields,
+  type SpanPosition,
   type SpanRow,
 } from "../../chat/annotations/model";
 
@@ -93,7 +95,8 @@ export interface PanelPoint {
   values: readonly (number | null)[];
   /** The marker field's option; null without a marker field or value. */
   marker: string | null;
-  messageId: string;
+  /** Where the span is in the sample's messages. */
+  position: SpanPosition;
   /** The message's 0-based position in the sample's messages. */
   messageIndex: number;
 }
@@ -106,6 +109,8 @@ export interface PanelMarker {
 /** One sample's plot. */
 export interface Panel {
   sample: AnalyticsSample;
+  /** The x layer's id in the sample (`layerId` of its score and name). */
+  layerId: string;
   title: string;
   spanCount: number;
   points: readonly PanelPoint[];
@@ -232,12 +237,19 @@ export const alongTranscript = (
         x: i + 1,
         values: seriesCells.map((cells) => numberOrNull(cells.get(key))),
         marker: markerCells ? stringOrNull(markerCells.get(key)) : null,
-        messageId: row.message_id,
+        position: {
+          messageId: row.message_id,
+          contentIndex: row.content_index,
+          start: row.start,
+          end: row.end,
+        },
         messageIndex: row.message_index,
       };
     });
+    const score = spans[0]?.score;
     return {
       sample,
+      layerId: score === undefined ? "" : layerId(score, params.x),
       title: panelTitle(
         sample,
         oneId,

@@ -1,33 +1,15 @@
 import { FC, useRef } from "react";
-import { useNavigate } from "react-router";
 
 import {
-  AlongTranscriptControls,
-  AlongTranscriptView,
-} from "@tsmono/inspect-components/analytics";
-import {
-  alongTranscript,
   mergeSpanTables,
-  resolveParams,
-  sampleScores,
   sampleSpanTable,
-  type AlongTranscript,
-  type AlongTranscriptParams,
-  type AnalyticsSample,
-  type PanelPoint,
   type SampleSpanTable,
-  type SpanTable,
 } from "@tsmono/inspect-components/analytics/model";
-import {
-  colorScheme,
-  type Parsed,
-} from "@tsmono/inspect-components/chat/annotations/model";
 import {
   ErrorPanel,
   NoContentsPanel,
   ProgressBar,
 } from "@tsmono/react/components";
-import { useProperty } from "@tsmono/react/hooks";
 
 import type { SampleSummary } from "../../../client/api/types";
 import { kLogViewAnalyticsTabId } from "../../../constants";
@@ -37,16 +19,10 @@ import {
   type SampleProjections,
 } from "../../../log_data";
 import { useEvalSpec, useSelectedSampleSummaries } from "../../../state/hooks";
+import { AlongTranscriptSection } from "../../analytics/AlongTranscriptSection";
+import styles from "../../analytics/Analytics.module.css";
+import { analyticsSample } from "../../analytics/analyticsSample";
 import { useCurrentLogFile } from "../../routing/currentSelection";
-import {
-  sampleMessageUrl,
-  useLogRouteParams,
-  useSampleUrlBuilder,
-} from "../../routing/url";
-import { useDarkTheme } from "../../samples/annotations/useDarkTheme";
-import { useAnnotationScheme } from "../../samples/annotations/useSampleAnnotations";
-
-import styles from "./AnalyticsTab.module.css";
 
 export const useAnalyticsTabConfig = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -88,7 +64,6 @@ const AnalyticsTab: FC = () => {
 };
 
 const kProjection = "span-table";
-const kParamsBag = "analytics";
 
 const LogAnalytics: FC<{
   logFile: string;
@@ -105,14 +80,6 @@ const LogAnalytics: FC<{
       .map((summary) => ({ id: summary.id, epoch: summary.epoch, logFile })),
     projection
   );
-  // Remembered across logs, and checked against each log by resolveParams.
-  const [stored, setStored] = useProperty<unknown>(
-    kParamsBag,
-    "along-transcript"
-  );
-  const [schemeId] = useAnnotationScheme();
-  const palette = { scheme: colorScheme(schemeId), dark: useDarkTheme() };
-  const openSpan = useOpenSpan();
 
   if (loaded.settled < loaded.total) {
     return (
@@ -138,82 +105,15 @@ const LogAnalytics: FC<{
       </div>
     );
   }
-  const params = resolveParams(stored, table, samples);
-  const view = viewOf(table, samples, params);
-  const setParams = (next: AlongTranscriptParams) => setStored(next);
-
   return (
     <div className={styles.tab}>
-      <h2 className={styles.title}>Along the transcript</h2>
-      <AlongTranscriptControls
-        params={params}
-        view={view.ok ? view.value : undefined}
-        layers={table.layers}
-        scores={sampleScores(table, samples)}
-        onChange={setParams}
+      <AlongTranscriptSection
+        table={table}
+        samples={samples}
+        notes={<LoadProblems loaded={loaded} />}
       />
-      <LoadProblems loaded={loaded} />
-      {view.ok ? (
-        <AlongTranscriptView
-          view={view.value}
-          palette={palette}
-          onSelectSpan={openSpan}
-        />
-      ) : (
-        <ErrorPanel
-          title="Unable to draw the view"
-          error={{ message: view.error }}
-        />
-      )}
     </div>
   );
-};
-
-const analyticsSample = (summary: SampleSummary): AnalyticsSample => ({
-  id: summary.id,
-  epoch: summary.epoch,
-  scores: Object.fromEntries(
-    Object.entries(summary.scores ?? {}).map(([name, score]) => [
-      name,
-      score.value,
-    ])
-  ),
-});
-
-// Data that two spans can't share a position in (e.g. a layer name used by
-// two scores) makes the view throw; that is shown, not a crash.
-const viewOf = (
-  table: SpanTable,
-  samples: readonly AnalyticsSample[],
-  params: AlongTranscriptParams
-): Parsed<AlongTranscript> => {
-  try {
-    return { ok: true, value: alongTranscript(table, samples, params) };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-};
-
-/** Opens a sample's Messages tab at the message of a span. */
-const useOpenSpan = () => {
-  const navigate = useNavigate();
-  const builder = useSampleUrlBuilder();
-  const { logPath } = useLogRouteParams();
-  return (sample: AnalyticsSample, point: PanelPoint) => {
-    if (!logPath) return;
-    navigate(
-      sampleMessageUrl(
-        builder,
-        encodeURIComponent(point.messageId),
-        logPath,
-        sample.id,
-        sample.epoch
-      )
-    );
-  };
 };
 
 const LoadProblems: FC<{ loaded: SampleProjections<SampleSpanTable> }> = ({

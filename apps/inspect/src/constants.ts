@@ -28,6 +28,7 @@ export const kSampleTranscriptTabId = `transcript`;
 export const kSampleCommunicationTabId = `communication`;
 export const kSampleTerminalsTabId = `terminals`;
 export const kSampleScoringTabId = `scoring`;
+export const kSampleAnalyticsTabId = `analytics`;
 export const kSampleActivityTabId = `activity`;
 export const kSampleInfoTabId = `info`;
 // Usage and Metadata were merged into Info; their ids stay routable so
@@ -54,6 +55,7 @@ export const kSampleTabIds = [
   kSampleCommunicationTabId,
   kSampleTerminalsTabId,
   kSampleScoringTabId,
+  kSampleAnalyticsTabId,
   kSampleActivityTabId,
   kSampleInfoTabId,
   kSampleUsageTabId,

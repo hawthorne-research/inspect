@@ -15,6 +15,7 @@ import { useCurrentSampleHandle } from "./currentSelection";
 import {
   logSamplesUrl,
   samplesSampleUrl,
+  spanTargetParam,
   toFullUrlMaybe,
   useLogOrSampleRouteParams,
   useLogRouteParams,
@@ -118,6 +119,7 @@ export const useSampleDetailNavigation = () => {
     message,
     event,
     follow,
+    span: spanTargetParam(searchParams),
   };
 };
 

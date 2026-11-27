@@ -71,6 +71,7 @@ import {
   type ActivityRailItem,
 } from "@tsmono/react/components";
 import {
+  useAttemptUntilDone,
   useChromeNavOwnership,
   useCopyToClipboard,
   useDocumentTitleText,
@@ -89,6 +90,7 @@ import { getApi } from "../../app_config";
 import { SampleSummary } from "../../client/api/types";
 import {
   kSampleActivityTabId,
+  kSampleAnalyticsTabId,
   kSampleCommunicationTabId,
   kSampleErrorTabId,
   kSampleInfoTabId,
@@ -115,6 +117,7 @@ import {
 import { useStore } from "../../state/store";
 import { cssVars } from "../../utils/cssVars";
 import { formatDateTime } from "../../utils/format";
+import { SampleAnalytics } from "../analytics/SampleAnalytics";
 import { useCurrentSampleHandle } from "../routing/currentSelection";
 import { useSampleDetailNavigation } from "../routing/sampleNavigation";
 import {
@@ -323,6 +326,19 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
     legend: legendRef,
   };
   const annotations = useSampleAnnotations(sample, legendTargets);
+  // A `?span=` link (e.g. from a click in Analytics) lands on its span once
+  // the sample, its layers and the span's message row have arrived.
+  const spanTarget = sampleDetailNavigation.span;
+  useAttemptUntilDone(
+    messagesTabOpen && spanTarget ? JSON.stringify(spanTarget) : null,
+    () =>
+      !!spanTarget &&
+      !!annotations &&
+      annotations.landOnSpan(
+        spanTarget,
+        sampleMessages.rows.data ?? kNoMessageRows
+      )
+  );
 
   // Focus the panel when it loads
   // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
@@ -1230,6 +1246,23 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                 )}
               </RailSidebarHost>
             </TabPanel>
+            {annotations && sample && evalSpec && sampleHandle ? (
+              <TabPanel
+                key={kSampleAnalyticsTabId}
+                id={kSampleAnalyticsTabId}
+                className={clsx("sample-tab", styles.fullWidth)}
+                title="Analytics"
+                onSelected={onSelectedTab}
+                href={sampleTabHref(kSampleAnalyticsTabId)}
+                selected={effectiveSelectedTab === kSampleAnalyticsTabId}
+              >
+                <SampleAnalytics
+                  sample={sample}
+                  evalId={evalSpec.eval_id}
+                  logFile={sampleHandle.logFile}
+                />
+              </TabPanel>
+            ) : null}
             {hasCommunicationTab ? (
               <TabPanel
                 key={kSampleCommunicationTabId}

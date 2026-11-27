@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { layerId } from "../../chat/annotations/model";
+
 import {
   alongTranscript,
   defaultParams,
@@ -114,16 +116,25 @@ describe("alongTranscript", () => {
     const [panel] = panels(alongTranscript(table, samples, params()));
     expect(panel?.spanCount).toBe(3);
     expect(
-      panel?.points.map(({ x, values, messageId, messageIndex }) => ({
+      panel?.points.map(({ x, values, messageIndex }) => ({
         x,
         values,
-        messageId,
         messageIndex,
       }))
     ).toEqual([
-      { x: 1, values: [0.2, -12], messageId: "a1", messageIndex: 1 },
-      { x: 2, values: [0.6, -6], messageId: "a1", messageIndex: 1 },
-      { x: 3, values: [0.9, -3], messageId: "a2", messageIndex: 3 },
+      { x: 1, values: [0.2, -12], messageIndex: 1 },
+      { x: 2, values: [0.6, -6], messageIndex: 1 },
+      { x: 3, values: [0.9, -3], messageIndex: 3 },
+    ]);
+  });
+
+  it("tells where each point's span is, and which layer it is of", () => {
+    const [panel] = panels(alongTranscript(table, samples, params()));
+    expect(panel?.layerId).toBe(layerId("p_eval", "P(eval)"));
+    expect(panel?.points.map((point) => point.position)).toEqual([
+      { messageId: "a1", contentIndex: null, start: 0, end: 9 },
+      { messageId: "a1", contentIndex: null, start: 11, end: 20 },
+      { messageId: "a2", contentIndex: null, start: 0, end: 11 },
     ]);
   });
 

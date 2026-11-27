@@ -15,9 +15,12 @@ import {
   parseLogRouteParams,
   parseSamplesRouteParams,
   printSampleUrl,
+  sampleSpanUrl,
   samplesSampleUrl,
   samplesUrl,
+  spanTargetParam,
   tasksUrl,
+  type SpanTarget,
 } from "./url";
 
 describe("parseLogRouteParams", () => {
@@ -346,6 +349,46 @@ describe("parseLogRouteParams", () => {
         epoch: undefined,
       });
     });
+  });
+});
+
+describe("span links", () => {
+  const builder = (
+    logPath: string,
+    sampleId?: string | number,
+    sampleEpoch?: string | number,
+    tab?: string
+  ) => logSamplesUrl(logPath, sampleId, sampleEpoch, tab);
+  const searchOf = (url: string) => new URLSearchParams(url.split("?")[1]);
+
+  test("link to the Messages tab with the span's message, offsets and layer", () => {
+    const target: SpanTarget = {
+      position: { messageId: "m/1 x", contentIndex: 2, start: 10, end: 42 },
+      layer: JSON.stringify(["p_eval", "P(eval) & more"]),
+    };
+    const url = sampleSpanUrl(builder, target, "dir/log.eval", "a b", 3);
+    expect(url.split("?")[0]).toBe(
+      logSamplesUrl("dir/log.eval", "a b", 3, "messages")
+    );
+    expect(searchOf(url).get("message")).toBe("m/1 x");
+    expect(spanTargetParam(searchOf(url))).toEqual(target);
+  });
+
+  test("leave out a content index or layer the target lacks", () => {
+    const target: SpanTarget = {
+      position: { messageId: "m1", contentIndex: null, start: 0, end: 5 },
+      layer: null,
+    };
+    const url = sampleSpanUrl(builder, target, "log.eval", 1, 1);
+    expect(searchOf(url).get("span")).toBe(":0-5");
+    expect(searchOf(url).has("layer")).toBe(false);
+    expect(spanTargetParam(searchOf(url))).toEqual(target);
+  });
+
+  test("have no span target without both message and span", () => {
+    for (const search of ["message=m1", "span=0:1-2", "message=m1&span=x"]) {
+      expect(spanTargetParam(new URLSearchParams(search))).toBeNull();
+    }
   });
 });
 

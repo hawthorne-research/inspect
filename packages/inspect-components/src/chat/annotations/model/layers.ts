@@ -86,6 +86,11 @@ export const collectAnnotationLayers = (
   return { layers, errors };
 };
 
+/** A layer's `ResolvedLayer.id`: unique within a sample. JSON keeps the
+ *  pair unambiguous whatever characters the names hold. */
+export const layerId = (score: string, layer: string): string =>
+  JSON.stringify([score, layer]);
+
 const warned = new Set<string>();
 
 /** Logs each distinct annotation problem once rather than on every
@@ -169,8 +174,7 @@ export const resolveLayer = (
   return {
     ok: true,
     value: {
-      // JSON keeps the pair unambiguous whatever characters the names hold.
-      id: JSON.stringify([score, layer.name]),
+      id: layerId(score, layer.name),
       score,
       name: layer.name,
       unit: layer.unit,

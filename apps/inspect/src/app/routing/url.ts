@@ -1,6 +1,11 @@
 import { useCallback, useMemo } from "react";
 import { useLocation } from "react-router";
 
+import {
+  formatSpanOffsets,
+  parseSpanOffsets,
+  type SpanPosition,
+} from "@tsmono/inspect-components/chat/annotations/model";
 import type { SelectableItem } from "@tsmono/inspect-components/selection";
 import { hashRouteUrl } from "@tsmono/react/routing";
 import { directoryRelativeUrl, encodePathParts } from "@tsmono/util";
@@ -355,6 +360,47 @@ export const sampleMessageUrl = (
 ) => {
   const baseUrl = builder(logPath, sampleId, sampleEpoch, tab);
   return `${baseUrl}?message=${messageId}`;
+};
+
+/** An annotated span to show in the Messages tab: where it is, and the
+ *  layer (a `layerId`) to show it in when the layer on screen has no span
+ *  there. */
+export interface SpanTarget {
+  position: SpanPosition;
+  layer: string | null;
+}
+
+/**
+ * Deep link to an annotated span: the Messages tab lands on the span and
+ * flashes it, as a click on the annotation strip does. `?message=` names
+ * the span's message, so the link degrades to a message link where the
+ * span can't be shown.
+ */
+export const sampleSpanUrl = (
+  builder: SampleUrlBuilder,
+  target: SpanTarget,
+  logPath: string,
+  sampleId: string | number,
+  sampleEpoch: string | number
+) => {
+  const baseUrl = builder(logPath, sampleId, sampleEpoch, kSampleMessagesTabId);
+  const params = new URLSearchParams({
+    message: target.position.messageId,
+    span: formatSpanOffsets(target.position),
+  });
+  if (target.layer !== null) params.set("layer", target.layer);
+  return `${baseUrl}?${params.toString()}`;
+};
+
+/** The span target of a URL's search params, if they have one. */
+export const spanTargetParam = (
+  searchParams: URLSearchParams
+): SpanTarget | null => {
+  const message = searchParams.get("message");
+  const span = searchParams.get("span");
+  const position =
+    message && span ? parseSpanOffsets(message, span) : undefined;
+  return position ? { position, layer: searchParams.get("layer") } : null;
 };
 
 /**

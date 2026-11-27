@@ -18,7 +18,15 @@ export {
 } from "./format";
 
 export type { CollectedLayers, ResolvedLayer, ResolvedPart } from "./layers";
-export { collectAnnotationLayers, spanText, warnAnnotations } from "./layers";
+export {
+  collectAnnotationLayers,
+  layerId,
+  spanText,
+  warnAnnotations,
+} from "./layers";
+
+export type { SpanPosition } from "./position";
+export { formatSpanOffsets, locateSpan, parseSpanOffsets } from "./position";
 
 export {
   fieldDetails,

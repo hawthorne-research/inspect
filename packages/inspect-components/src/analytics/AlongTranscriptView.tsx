@@ -11,12 +11,7 @@ import {
 
 import styles from "./AlongTranscript.module.css";
 import { markerColor, seriesColor } from "./colors";
-import type {
-  AlongTranscript,
-  AnalyticsSample,
-  Panel,
-  PanelPoint,
-} from "./model";
+import type { AlongTranscript, Panel, PanelPoint } from "./model";
 
 const PanelPlot = lazy(() => import("./PanelPlot"));
 
@@ -28,8 +23,10 @@ const kDefaultWidth = 960;
 interface AlongTranscriptViewProps {
   view: AlongTranscript;
   palette: Palette;
-  /** A click in a panel: the sample and its span nearest the pointer. */
-  onSelectSpan: (sample: AnalyticsSample, point: PanelPoint) => void;
+  /** A click in a panel: the panel and its span nearest the pointer. */
+  onSelectSpan: (panel: Panel, point: PanelPoint) => void;
+  /** Height of each panel's plot, in pixels. */
+  panelHeight?: number;
 }
 
 /** The "along the transcript" view: a shared legend, then a small plot per
@@ -38,6 +35,7 @@ export const AlongTranscriptView: FC<AlongTranscriptViewProps> = ({
   view,
   palette,
   onSelectSpan,
+  panelHeight = kPanelHeight,
 }) => {
   const [measured, setMeasured] = useState(0);
   const gridRef = useResizeObserver((entry) =>
@@ -48,8 +46,6 @@ export const AlongTranscriptView: FC<AlongTranscriptViewProps> = ({
     160,
     Math.floor(((measured || kDefaultWidth) - kGap * (columns - 1)) / columns)
   );
-  const onSelect = (panel: Panel, point: PanelPoint) =>
-    onSelectSpan(panel.sample, point);
   const panelCount = view.groups.reduce((n, g) => n + g.panels.length, 0);
 
   return (
@@ -101,14 +97,14 @@ export const AlongTranscriptView: FC<AlongTranscriptViewProps> = ({
                   <figcaption className={styles.panelTitle}>
                     {panel.title}
                   </figcaption>
-                  <Suspense fallback={<div style={{ height: kPanelHeight }} />}>
+                  <Suspense fallback={<div style={{ height: panelHeight }} />}>
                     <PanelPlot
                       panel={panel}
                       view={view}
                       palette={palette}
                       width={width}
-                      height={kPanelHeight}
-                      onSelect={onSelect}
+                      height={panelHeight}
+                      onSelect={onSelectSpan}
                     />
                   </Suspense>
                 </figure>

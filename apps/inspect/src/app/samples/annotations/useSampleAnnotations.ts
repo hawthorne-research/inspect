@@ -5,7 +5,9 @@ import {
   buildMessageRows,
   countRowBlocks,
   kMergedSystemMessageId,
+  rowContainsMessage,
   type ChatViewListHandle,
+  type MessageRow,
 } from "@tsmono/inspect-components/chat";
 import {
   flashSpan,
@@ -16,6 +18,7 @@ import {
   buildStrip,
   collectAnnotationLayers,
   colorScheme,
+  locateSpan,
   stepColorScheme,
   warnAnnotations,
   type AnnotationView,
@@ -26,6 +29,7 @@ import {
 import { useProperty } from "@tsmono/react/hooks";
 
 import { kDefaultMessageRowOptions } from "../../../log_data";
+import type { SpanTarget } from "../../routing/url";
 
 import { scrollToSpan } from "./scrollToSpan";
 import { useDarkTheme } from "./useDarkTheme";
@@ -48,6 +52,13 @@ export interface SampleAnnotations {
   clearHighlight: () => void;
   /** Scrolls the messages list to a span and flashes it. */
   focusSpan: (location: SpanLocation) => void;
+  /**
+   * One step of landing a deep link on its span (see `useAttemptUntilDone`):
+   * true once it has focused the span, or found it can't be shown; false to
+   * be called again, while `rows` lack its message or after switching to
+   * the target's layer because the layer on screen has no span there.
+   */
+  landOnSpan: (target: SpanTarget, rows: readonly MessageRow[]) => boolean;
   /** Moves to the next colour scheme (`step` 1) or the previous (-1). */
   cycleScheme: (step: 1 | -1) => void;
 }
@@ -139,6 +150,35 @@ export function useSampleAnnotations(
     }
   };
 
+  const rendered = (rows: readonly MessageRow[], messageId: string) =>
+    rows.some(
+      (row) =>
+        rowContainsMessage(row, messageId) ||
+        (systemIds.has(messageId) &&
+          row.resolved.message.id === kMergedSystemMessageId)
+    );
+
+  const landOnSpan = (
+    target: SpanTarget,
+    rows: readonly MessageRow[]
+  ): boolean => {
+    const location = locateSpan(layer, target.position);
+    if (!location) {
+      const other = layers.find((l) => l.id === target.layer);
+      if (other && locateSpan(other, target.position)) {
+        setLayer(other.id);
+        return false;
+      }
+      warnAnnotations(`no layer has the linked span ${JSON.stringify(target)}`);
+      return true;
+    }
+    if (!rendered(rows, target.position.messageId) || !targets.list.current) {
+      return false;
+    }
+    focusSpan(location);
+    return true;
+  };
+
   return {
     view,
     layers,
@@ -155,6 +195,7 @@ export function useSampleAnnotations(
       }),
     clearHighlight: () => setHighlight({ layer: "", field: "", options: [] }),
     focusSpan,
+    landOnSpan,
     cycleScheme: (step) =>
       setSchemeId(stepColorScheme(palette.scheme, step).id),
   };
