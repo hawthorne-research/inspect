@@ -41,8 +41,10 @@ export interface SpanRow extends FieldColumns {
   layer: string;
   unit: string;
   message_id: string;
-  /** The message's 1-based position in the sample's messages. */
-  order: number;
+  /** The message's 0-based position in the sample's messages (not
+   *  Inspect's `messages_df` `order`, which counts from 1 over the model
+   *  events' messages). */
+  message_index: number;
   role: ChatMessage["role"];
   content_index: number | null;
   start: number;
@@ -129,7 +131,7 @@ export const spanRows = (
           layer: layer.name,
           unit: layer.unit,
           message_id: part.messageId,
-          order: part.messagePosition + 1,
+          message_index: part.messagePosition,
           role: part.role,
           content_index: part.contentIndex,
           start,
@@ -423,7 +425,7 @@ const spanColumns = ({
   layer,
   unit,
   message_id,
-  order,
+  message_index,
   role,
   content_index,
   start,
@@ -440,7 +442,7 @@ const spanColumns = ({
   layer,
   unit,
   message_id,
-  order,
+  message_index,
   role,
   content_index,
   start,
@@ -481,7 +483,7 @@ const inTranscriptOrder = (rows: readonly SpanRow[]): SpanRow[] => {
   return [...rows].sort(
     (a, b) =>
       rank(a) - rank(b) ||
-      a.order - b.order ||
+      a.message_index - b.message_index ||
       (a.content_index ?? 0) - (b.content_index ?? 0) ||
       a.start - b.start
   );

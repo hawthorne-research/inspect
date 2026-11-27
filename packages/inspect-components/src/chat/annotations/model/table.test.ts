@@ -126,7 +126,7 @@ describe("spanRows", () => {
       layer: "paragraphs",
       unit: "paragraph",
       message_id: "a1",
-      order: 3,
+      message_index: 2,
       role: "assistant",
       content_index: 0,
       field_deception: null,
@@ -137,7 +137,7 @@ describe("spanRows", () => {
       layer: "probes",
       unit: "token",
       message_id: "u1",
-      order: 2,
+      message_index: 1,
       role: "user",
       content_index: null,
       field_kind: null,
@@ -221,11 +221,15 @@ describe("spanRows", () => {
       ]),
     });
     expect(
-      rowsOf(sample).map((r) => [r.span_index, r.order, r.content_index])
+      rowsOf(sample).map((r) => [
+        r.span_index,
+        r.message_index,
+        r.content_index,
+      ])
     ).toEqual([
-      [0, 2, null],
-      [1, 2, null],
-      [2, 3, 1],
+      [0, 1, null],
+      [1, 1, null],
+      [2, 2, 1],
     ]);
   });
 
