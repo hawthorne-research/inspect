@@ -10,9 +10,22 @@ you choose with a `Splitter` (`paragraphs`, `tokens()` or `whole`).
 `classifier_annotator` and `probe_annotator` apply a classifier or a probe
 runner to the spans; `binary_question` and `probe_field` make their fields.
 
+`spans_df` reads the annotations of eval logs into a pandas data frame with
+one row per span per layer per sample, which joins onto `samples_df` and
+`messages_df`. `align` puts side by side the fields of layers with the same
+spans, and `roll_up` aggregates a layer's values over a coarser layer's spans.
+
 Fakes and example scripts are in the `examples` subpackage.
 """
 
+from .analysis import (
+    CATEGORICAL_FIELDS,
+    Aggregation,
+    FieldOptions,
+    align,
+    roll_up,
+    spans_df,
+)
 from .annotations import (
     TEXT_ANNOTATIONS_KEY,
     AnnotatedPart,
@@ -57,9 +70,11 @@ from .spans import (
 
 __all__ = [
     "ANNOTATION_METRICS",
+    "CATEGORICAL_FIELDS",
     "PARAGRAPH_BREAK",
     "TEXT_ANNOTATIONS_KEY",
     "AnnotatedPart",
+    "Aggregation",
     "AnnotatedSpan",
     "AnnotationField",
     "AnnotationLayer",
@@ -67,6 +82,7 @@ __all__ = [
     "CategoricalField",
     "Classifier",
     "ContentType",
+    "FieldOptions",
     "NumericField",
     "ProbeRunner",
     "Role",
@@ -77,6 +93,7 @@ __all__ = [
     "TextAnnotations",
     "TextPart",
     "TextRange",
+    "align",
     "annotation_score",
     "binary_question",
     "check_spans_fit",
@@ -86,7 +103,9 @@ __all__ = [
     "paragraphs",
     "probe_annotator",
     "probe_field",
+    "roll_up",
     "span_texts",
+    "spans_df",
     "text_annotations",
     "text_parts",
     "tokens",

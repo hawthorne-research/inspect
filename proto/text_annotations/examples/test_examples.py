@@ -39,6 +39,7 @@ from .fake import (
     random_classifier,
 )
 from .make_demo import make_demo
+from .make_table_fixture import FIXTURE_DIR, SAMPLE_FILE, SPANS_FILE, table_fixture
 
 PROBES = [fake.probe for fake in FAKE_PROBES]
 TOKENS = find_spans(tokens())
@@ -195,3 +196,16 @@ def test_demo_log_has_both_layers(tmp_path: Path) -> None:
     assert shortcut == ["weighing_shortcut"]
     assert values.unit == "token" and values.span_count() > 0
     assert values.metadata == {"tokenizer": "tiktoken/o200k_base"}
+
+
+def test_table_fixture_is_up_to_date() -> None:
+    files = [FIXTURE_DIR / SAMPLE_FILE, FIXTURE_DIR / SPANS_FILE]
+    if not all(path.exists() for path in files):
+        pytest.skip(
+            "The viewer submodule's proto/paragraph-labels branch isn't checked out"
+        )
+    fixture = table_fixture()
+    assert [path.read_bytes() for path in files] == [
+        fixture.sample.encode(),
+        fixture.spans.encode(),
+    ], "Run python -m proto.text_annotations.examples.make_table_fixture"

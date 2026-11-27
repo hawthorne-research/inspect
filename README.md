@@ -203,6 +203,42 @@ log = score(
 write_eval_log(log, "annotated/my-run.eval")
 ```
 
+## Analyse annotations in Python
+
+`spans_df` reads the annotations in one or more logs into a pandas data frame with one row per span per layer per sample. It takes logs as the `inspect_ai.analysis` functions do (a log file, a directory, or a list of either) and reads one sample at a time. Pass `layers=[...]` to read only some layers.
+
+Its columns:
+
+- `sample_id`, `eval_id` and `log`, as in `samples_df` and `messages_df`. Join `samples_df` on `sample_id`, and `messages_df` on `sample_id` and `message_id`.
+- `id` and `epoch`: the sample's dataset id and epoch.
+- `score`, `layer` and `unit`.
+- Where the span is: `message_id`, `order` (the message's position in the sample's messages, from 1), `role`, `content_index`, `start` and `end`; and `span_index`, the span's position among its layer's spans in the sample, from 0.
+- `field_<name>` for each field: the option or the number, empty on rows of layers without that field.
+- With `text=True`, the span's `text`. With `probabilities=True`, a `prob_<field>_<option>` column for each option of each categorical field that has probabilities.
+
+`roll_up` aggregates the fields of a fine layer over the spans of a coarse one, for example probe values on tokens over paragraphs. A numeric field is aggregated with `agg` ("mean", "max", "min", "sum" or "count"), and a categorical field gives the most frequent option that isn't negative. On the demo log:
+
+```python
+from inspect_ai.analysis import EvalModel, SampleSummary, samples_df
+
+from proto.text_annotations import roll_up, spans_df
+
+log = "demo/text-annotations-demo.eval"
+spans = spans_df(log, text=True)
+
+# the highest value of each probe on the tokens of each labelled paragraph
+paragraphs = roll_up(spans, fine="probes", coarse="paragraph labels", agg="max")
+
+# join the model from samples_df, then compare probe values by label
+samples = samples_df(log, columns=SampleSummary + EvalModel)
+paragraphs = paragraphs.merge(samples[["sample_id", "model"]], on="sample_id")
+print(paragraphs.groupby(["model", "field_kind"])["field_eval_awareness_L32"].mean())
+```
+
+`align` is for layers with the same spans, such as two classifiers' labels of the same paragraphs. It keeps the spans that are in every layer you list, with the fields of all of them, so `align(spans, ["labels", "monitor"])` gives one row per paragraph with both layers' fields. Its `layer` is the names joined with "+", here "labels+monitor".
+
+`roll_up` reads the options of categorical fields from the data frame's `attrs`, where `spans_df` puts them. pandas drops `attrs` when merging, so roll up before joining other tables.
+
 ## Stored format
 
 Each scorer stores its layers in `Score.metadata["text_annotations"]`:

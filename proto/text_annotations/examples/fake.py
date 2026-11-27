@@ -228,9 +228,11 @@ def fake_probe_runner(
     shows whether the viewer lines values up with the right tokens.
 
     Deterministic: the values of a probe on the spans of one message part
-    come from `seeded_random(seed, sample id, epoch, message id, content
-    index, probe name)`. The series runs over a part's spans in the order
-    given, which should be ascending.
+    come from `seeded_random(seed, sample id, epoch, message position,
+    content index, probe name)`, where the message position is its index in
+    the messages. Message ids are random, so they aren't part of the seed.
+    The series runs over a part's spans in the order given, which should be
+    ascending.
 
     Args:
         seed: Extra seed text, e.g. the eval id, so that samples with the
@@ -248,6 +250,9 @@ def fake_probe_runner(
         texts = {
             (p.message_id, p.content_index): p.text for p in text_parts(state.messages)
         }
+        positions = {
+            message.id: position for position, message in enumerate(state.messages)
+        }
         by_part: dict[tuple[str, int | None], list[int]] = {}
         for index, span in enumerate(spans):
             by_part.setdefault((span.message_id, span.content_index), []).append(index)
@@ -264,7 +269,7 @@ def fake_probe_runner(
                     seed,
                     state.sample_id,
                     state.epoch,
-                    message_id,
+                    positions[message_id],
                     content_index,
                     probe.name,
                 )
