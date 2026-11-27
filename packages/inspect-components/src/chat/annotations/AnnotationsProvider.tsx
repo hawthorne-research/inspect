@@ -1,25 +1,29 @@
 import { FC, ReactNode } from "react";
 
+import type { ChatMessage } from "@tsmono/inspect-common/types";
+
 import { MessagePartRendererContext, type MessagePartRenderer } from "..";
 
 import { AnnotatedPart } from "./AnnotatedPart";
+import { chatPartFinder, hasAnnotatedPart } from "./chatParts";
 import { AnnotationsContext } from "./context";
-import { findPart, hasAnnotatedPart, type ResolvedLayer } from "./layers";
-import type { AnnotationView } from "./view";
+import type { AnnotationView, ResolvedLayer } from "./model";
 
 /**
- * Draws `view`'s layer on the chat views inside: annotated parts render
- * through `AnnotatedPart`, and messages holding them start expanded.
- * Without a view the chat renders as usual.
+ * Draws `view`'s layer on the chat views inside, which show `messages`:
+ * annotated parts render through `AnnotatedPart`, and messages holding
+ * them start expanded. Without a view the chat renders as usual.
  */
 export const AnnotationsProvider: FC<{
   view: AnnotationView | undefined;
+  /** The sample's messages, which the layer was resolved against. */
+  messages: readonly ChatMessage[];
   children: ReactNode;
-}> = ({ view, children }) => {
-  // Built from the layer alone, so changing the field or highlight
-  // re-renders annotated parts rather than every chat message.
+}> = ({ view, messages, children }) => {
+  // Built without the field or highlight, so changing those re-renders
+  // annotated parts rather than every chat message.
   const layer = view?.layer;
-  const renderer = layer ? layerPartRenderer(layer) : undefined;
+  const renderer = layer ? layerPartRenderer(layer, messages) : undefined;
   return (
     <AnnotationsContext.Provider value={view}>
       <MessagePartRendererContext.Provider value={renderer}>
@@ -29,12 +33,18 @@ export const AnnotationsProvider: FC<{
   );
 };
 
-const layerPartRenderer = (layer: ResolvedLayer): MessagePartRenderer => ({
-  renderPart: (message, contentIndex, { toolOutput }) => {
-    const part = findPart(layer, message, contentIndex);
-    return part ? (
-      <AnnotatedPart part={part} toolOutput={toolOutput} />
-    ) : undefined;
-  },
-  startsExpanded: (message) => hasAnnotatedPart(layer, message),
-});
+const layerPartRenderer = (
+  layer: ResolvedLayer,
+  messages: readonly ChatMessage[]
+): MessagePartRenderer => {
+  const find = chatPartFinder(layer, messages);
+  return {
+    renderPart: (message, contentIndex, { toolOutput }) => {
+      const part = find(message, contentIndex);
+      return part ? (
+        <AnnotatedPart part={part} toolOutput={toolOutput} />
+      ) : undefined;
+    },
+    startsExpanded: (message) => hasAnnotatedPart(find, message),
+  };
+};

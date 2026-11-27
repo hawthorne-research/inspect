@@ -1,17 +1,26 @@
 import clsx from "clsx";
-import { CSSProperties, FC, useState } from "react";
+import { FC, useState } from "react";
 
 import { useEventListener } from "@tsmono/react/hooks";
 
 import { hoveredSpan, type HoveredSpan } from "./dom";
-import { fieldLabel, type AnnotationField } from "./format";
-import type { ResolvedLayer, ResolvedPart } from "./layers";
-import { spanText } from "./layers";
-import { fieldScale, valueIntensity } from "./numeric";
-import { paletteColors, type Palette } from "./schemes";
+import {
+  fieldScale,
+  fieldTitle,
+  paletteColors,
+  spanStyle,
+  spanText,
+  spanValue,
+  valueIntensity,
+  type AnnotationField,
+  type AnnotationView,
+  type Palette,
+  type ResolvedLayer,
+  type ResolvedPart,
+  type SpanStyle,
+} from "./model";
 import styles from "./SpanTooltip.module.css";
 import { Swatch } from "./Swatch";
-import { spanStyle, spanValue, type AnnotationView } from "./view";
 
 const kColumnWidth = 430;
 const kGap = 6;
@@ -99,17 +108,14 @@ const FieldValue: FC<{
   palette: Palette;
   part: ResolvedPart;
   span: number;
-  swatch: CSSProperties | undefined | null;
+  swatch: SpanStyle | undefined | null;
 }> = ({ field, layer, palette, part, span, swatch }) => {
   const value = spanValue(field, part, span);
   const active = swatch !== null;
   const name = (
-    <span
-      className={styles.fieldName}
-      title={field.description ?? fieldLabel(field)}
-    >
+    <span className={styles.fieldName} title={fieldTitle(field)}>
       {active ? <Swatch fill={swatch} /> : null}
-      {fieldLabel(field)}
+      {field.name}
     </span>
   );
 

@@ -1,10 +1,18 @@
+/** CSS declarations for an annotated span or its swatch: a plain object
+ *  that a React `style` prop or an element's `style` accepts. */
+export interface SpanStyle {
+  backgroundColor?: string;
+  backgroundImage?: string;
+  color?: string;
+  opacity?: number;
+}
+
 /** The colours of one theme (light or dark) in a colour scheme, as hex. */
 export interface SchemeColors {
-  /** Categorical options' hues, by option index. */
+  /** Categorical options' hues, by position among a field's non-negative
+   *  options. */
   options: readonly string[];
-  /** The "yes" (or "1") of a yes/no field. */
-  yes: string;
-  /** Options past twice the palette's length. */
+  /** Non-negative options past twice the palette's length. */
   none: string;
   /** Numeric values below and above zero. */
   negative: string;
@@ -45,7 +53,6 @@ const kOkabeIto: SchemeColors = {
     "#f0e442",
     "#999999",
   ],
-  yes: "#d55e00",
   none: "#999999",
   negative: "#0072b2",
   positive: "#d55e00",
@@ -67,7 +74,6 @@ export const kColorSchemes: readonly ColorScheme[] = [
         "#6250d6",
         "#e34948",
       ],
-      yes: "#eb6834",
       none: "#a9abaf",
       negative: "#257de0",
       positive: "#ec4647",
@@ -83,7 +89,6 @@ export const kColorSchemes: readonly ColorScheme[] = [
         "#9085e9",
         "#e66767",
       ],
-      yes: "#d95926",
       none: "#67696f",
       negative: "#1b64be",
       positive: "#c0392b",
@@ -114,7 +119,6 @@ export const kColorSchemes: readonly ColorScheme[] = [
         "#bbbbbb",
         "#555555",
       ],
-      yes: "#ee6677",
       none: "#bbbbbb",
       negative: "#364b9a",
       positive: "#a50026",
@@ -143,7 +147,6 @@ export const kColorSchemes: readonly ColorScheme[] = [
         "#ff8c00",
         "#7f00ff",
       ],
-      yes: "#ff0000",
       none: "#808080",
       negative: "#0000ff",
       positive: "#ff0000",
@@ -156,7 +159,7 @@ export const kColorSchemes: readonly ColorScheme[] = [
 const kSchemeDefault: ColorScheme = kColorSchemes[0] ?? {
   id: "none",
   name: "None",
-  ...same({ options: [], yes: "", none: "", negative: "", positive: "" }),
+  ...same({ options: [], none: "", negative: "", positive: "" }),
   tint: 0,
   maxShade: 0,
 };

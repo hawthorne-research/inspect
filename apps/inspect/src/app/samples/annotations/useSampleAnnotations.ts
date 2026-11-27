@@ -8,19 +8,21 @@ import {
   type ChatViewListHandle,
 } from "@tsmono/inspect-components/chat";
 import {
+  flashSpan,
+  spanSelector,
+} from "@tsmono/inspect-components/chat/annotations";
+import {
   annotationView,
   buildStrip,
   collectAnnotationLayers,
   colorScheme,
-  flashSpan,
-  spanSelector,
   stepColorScheme,
   warnAnnotations,
   type AnnotationView,
   type ResolvedLayer,
   type SpanLocation,
   type StripSegment,
-} from "@tsmono/inspect-components/chat/annotations";
+} from "@tsmono/inspect-components/chat/annotations/model";
 import { useProperty } from "@tsmono/react/hooks";
 
 import { kDefaultMessageRowOptions } from "../../../log_data";

@@ -1,9 +1,8 @@
 import clsx from "clsx";
 import { FC, MouseEvent, useState } from "react";
 
-import { spanCountLabel } from "./format";
+import { spanCountLabel, type SpanLocation, type StripSegment } from "./model";
 import styles from "./OverviewStrip.module.css";
-import type { SpanLocation, StripSegment } from "./strip";
 import { Swatch } from "./Swatch";
 
 const kTooltipWidth = 320;

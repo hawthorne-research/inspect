@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseTextAnnotations, type AnnotationLayer } from "./format";
 import {
+  findingField,
   kindField,
   probeField,
   rawAnnotations,
@@ -55,7 +56,7 @@ describe("parseTextAnnotations", () => {
         type: "numeric",
         name: "deception",
         description: "Linear probe",
-        modelLayer: 12,
+        metadata: { layer: 12, method: "logistic regression" },
       },
     ]);
     expect(layer.parts[0]?.values.get("deception")).toEqual([0.5, -1, 2]);
@@ -66,6 +67,18 @@ describe("parseTextAnnotations", () => {
     const [part] = layer.parts;
     expect(part?.labels.get("kind")).toEqual(["mapping"]);
     expect(part?.probabilities.get("suspects_test")).toEqual([[0.2, 0.8]]);
+  });
+
+  it("keeps a categorical field's negative options", () => {
+    const [, suspects] = parsedLayer(labelLayer()).fields;
+    expect(suspects).toEqual({
+      type: "categorical",
+      name: "suspects_test",
+      description: null,
+      metadata: {},
+      options: ["yes", "no"],
+      negative: ["no"],
+    });
   });
 
   it("accepts a layer with both a categorical and a numeric field", () => {
@@ -105,28 +118,43 @@ describe("parseTextAnnotations", () => {
     expect(layerError(rawLayer({ parts: [] }))).toBeUndefined();
   });
 
-  it("fills a missing description and model layer with null", () => {
+  it("fills a missing description, metadata and negative options", () => {
     const layer = parsedLayer(
       rawLayer({
         description: undefined,
-        fields: [{ name: "p", type: "numeric" }],
+        fields: [
+          { name: "p", type: "numeric" },
+          { name: "c", type: "categorical", options: ["a", "b"] },
+        ],
         parts: [],
       })
     );
     expect(layer.description).toBeNull();
     expect(layer.fields).toEqual([
-      { type: "numeric", name: "p", description: null, modelLayer: null },
+      { type: "numeric", name: "p", description: null, metadata: {} },
+      {
+        type: "categorical",
+        name: "c",
+        description: null,
+        metadata: {},
+        options: ["a", "b"],
+        negative: [],
+      },
     ]);
   });
 
-  it("keeps a layer's metadata, of any JSON values", () => {
+  it("keeps a layer's and a field's metadata, of any JSON values", () => {
     const metadata = {
       tokenizer: "tiktoken/o200k_base",
       threshold: 0.5,
       layers: [16, 24],
       run: { seed: 1, tags: null },
     };
-    expect(parsedLayer(rawLayer({ metadata })).metadata).toEqual(metadata);
+    const layer = parsedLayer(
+      rawLayer({ metadata, fields: [{ ...probeField, metadata }] })
+    );
+    expect(layer.metadata).toEqual(metadata);
+    expect(layer.fields[0]?.metadata).toEqual(metadata);
   });
 
   it("reads missing metadata as empty", () => {
@@ -141,12 +169,31 @@ describe("parseTextAnnotations", () => {
     expect(layerError(rawLayer({ metadata }))).toBe(
       'layer "probes": metadata is not an object'
     );
+    expect(
+      layerError(rawLayer({ fields: [{ ...probeField, metadata }] }))
+    ).toBe('layer "probes": fields[0]: metadata is not an object');
+  });
+
+  const negative = (options: unknown) =>
+    rawLayer({ fields: [{ ...findingField, negative: options }], parts: [] });
+
+  it.each([
+    ["null", null, "negative is not a list of strings"],
+    ["a string", "absent", "negative is not a list of strings"],
+    ["not an option", ["missing"], "negative option missing is not an option"],
+    ["repeated", ["absent", "absent"], "negative has repeats"],
+    ["every option", ["absent", "present"], "every option is negative"],
+  ])("rejects negative options that are %s", (_name, options, error) => {
+    expect(layerError(negative(options))).toBe(
+      `layer "probes": fields[0]: ${error}`
+    );
   });
 
   it.each([
     ["a non-object", "nope"],
-    ["an unknown version", { ...rawAnnotations(), version: 1 }],
-    ["layers that are not a list", { version: 0, layers: {} }],
+    ["version 0", { ...rawAnnotations(), version: 0 }],
+    ["an unknown version", { ...rawAnnotations(), version: 2 }],
+    ["layers that are not a list", { version: 1, layers: {} }],
   ])("rejects %s as a whole", (_name, raw) => {
     expect(parseTextAnnotations(raw).ok).toBe(false);
   });
@@ -165,10 +212,6 @@ describe("parseTextAnnotations", () => {
       rawLayer({ fields: [{ name: "p", type: "text" }] }),
     ],
     ["a duplicate field name", rawLayer({ fields: [probeField, probeField] })],
-    [
-      "a non-numeric model layer",
-      rawLayer({ fields: [{ ...probeField, model_layer: "x" }] }),
-    ],
     [
       "a categorical field with one option",
       rawLayer({ fields: [{ ...kindField, options: ["a"] }], parts: [] }),

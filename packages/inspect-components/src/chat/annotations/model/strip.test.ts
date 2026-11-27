@@ -12,7 +12,7 @@ import type {
 import type { ResolvedLayer } from "./layers";
 import { buildStrip } from "./strip";
 import {
-  flagField,
+  findingField,
   kindField,
   probeField,
   rawLayer,
@@ -40,7 +40,7 @@ const kMessages: ChatMessage[] = [
 interface SpanValues {
   kind?: string[];
   deception?: number[];
-  flag?: string[];
+  finding?: string[];
 }
 
 const part = (
@@ -58,13 +58,13 @@ const part = (
     values: {
       kind: values.kind ?? starts.map(() => "task_work"),
       deception: values.deception ?? starts.map((_, i) => i + 1),
-      flag: values.flag ?? starts.map(() => "0"),
+      finding: values.finding ?? starts.map(() => "absent"),
     },
   });
 
 const layer = (parts: unknown[]): ResolvedLayer =>
   resolvedLayer(
-    rawLayer({ fields: [kindField, probeField, flagField], parts }),
+    rawLayer({ fields: [kindField, probeField, findingField], parts }),
     kMessages
   );
 
@@ -73,7 +73,7 @@ const kAllSpans = [
   part("u1", null, [0, 4, 8], [3, 7, 13], {
     kind: ["mapping", "task_work", "mapping"],
     deception: [0.5, -4, 1],
-    flag: ["0", "1", "0"],
+    finding: ["absent", "present", "absent"],
   }),
   part("a1", 0, [0, 8], [6, 15]),
   part("a1", 1, [0], [6]),
@@ -155,12 +155,12 @@ describe("buildStrip", () => {
     ]);
   });
 
-  it("shows a run of a yes/no field by its tinted option", () => {
-    const view = viewOf(layer(kAllSpans), "flag");
+  it("shows a run by a non-negative option when one is there", () => {
+    const view = viewOf(layer(kAllSpans), "finding");
     const [first, second] = buildStrip(view, new Map(), 2);
-    expect(first).toMatchObject({ label: "1 (1)", text: "the" });
+    expect(first).toMatchObject({ label: "present (1)", text: "the" });
     expect(first?.style).toBeDefined();
-    expect(second).toMatchObject({ label: "0 (4)", text: "First." });
+    expect(second).toMatchObject({ label: "absent (4)", text: "First." });
     expect(second?.style).toBeUndefined();
   });
 

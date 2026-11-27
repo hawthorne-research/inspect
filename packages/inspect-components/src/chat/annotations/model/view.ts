@@ -1,10 +1,8 @@
-import type { CSSProperties } from "react";
-
 import { optionStyle } from "./categorical";
 import type { AnnotationField } from "./format";
 import type { ResolvedLayer, ResolvedPart } from "./layers";
 import { fieldScale, formatValue, valueStyle } from "./numeric";
-import type { Palette } from "./schemes";
+import type { Palette, SpanStyle } from "./schemes";
 
 /** The annotation layer on screen and the field that colours its spans. */
 export interface AnnotationView {
@@ -54,7 +52,7 @@ export const spanStyle = (
   view: AnnotationView,
   part: ResolvedPart,
   span: number
-): CSSProperties | undefined => {
+): SpanStyle | undefined => {
   const { field } = view;
   return field.type === "categorical"
     ? optionStyle(

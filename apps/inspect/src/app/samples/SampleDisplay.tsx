@@ -13,7 +13,11 @@ import {
 } from "react";
 import { useNavigate } from "react-router";
 
-import { EvalSample, EvalSpec } from "@tsmono/inspect-common/types";
+import {
+  ChatMessage,
+  EvalSample,
+  EvalSpec,
+} from "@tsmono/inspect-common/types";
 import { modelRoleNames } from "@tsmono/inspect-common/utils";
 import {
   ChatViewRowsVirtualList,
@@ -166,6 +170,7 @@ type ActivityRailItemId = "search" | "scans";
 // stable empty rows while the messages read is pending, so the list's
 // props don't churn per render
 const kNoMessageRows: MessageRow[] = [];
+const kNoMessages: ChatMessage[] = [];
 /**
  * Component to display a sample with relevant context and visibility control.
  */
@@ -1172,7 +1177,10 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                     error={sampleMessages.rows.error}
                   />
                 ) : (
-                  <AnnotationsProvider view={annotations?.view}>
+                  <AnnotationsProvider
+                    view={annotations?.view}
+                    messages={sample?.messages ?? kNoMessages}
+                  >
                     {annotations ? (
                       // In flow above the list, so the chat's landings
                       // (which compensate for in-flow chrome) still clear it.

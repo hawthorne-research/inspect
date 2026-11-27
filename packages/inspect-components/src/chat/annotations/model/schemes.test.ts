@@ -17,7 +17,6 @@ describe("kColorSchemes", () => {
         expect(colors.options).toHaveLength(8);
         for (const color of [
           ...colors.options,
-          colors.yes,
           colors.none,
           colors.negative,
           colors.positive,

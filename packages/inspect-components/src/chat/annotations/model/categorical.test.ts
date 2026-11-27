@@ -2,17 +2,26 @@ import { describe, expect, it } from "vitest";
 
 import { testAssistantMessage } from "@tsmono/inspect-common/testing";
 
-import { countOptions, optionStyle, summaryOption } from "./categorical";
+import {
+  countOptions,
+  optionColor,
+  optionStyle,
+  summaryOption,
+} from "./categorical";
 import type { CategoricalField } from "./format";
 import { colorScheme, textOn, withAlpha, type Palette } from "./schemes";
 import { kindField, rawLayer, rawPart, resolvedLayer } from "./testFixtures";
 
-const field = (options: string[], name = "kind"): CategoricalField => ({
+const field = (
+  options: string[],
+  negative: string[] = []
+): CategoricalField => ({
   type: "categorical",
-  name,
+  name: "kind",
   description: null,
-  modelLayer: null,
+  metadata: {},
   options,
+  negative,
 });
 
 const light: Palette = { scheme: colorScheme("default"), dark: false };
@@ -63,8 +72,29 @@ describe("countOptions", () => {
   });
 });
 
+describe("optionColor", () => {
+  it("counts palette positions among the non-negative options only", () => {
+    const leading = field(["none", "a", "b"], ["none"]);
+    expect(optionColor(leading, "a", light)?.color).toBe(hue(0));
+    expect(optionColor(leading, "b", light)?.color).toBe(hue(1));
+    const middle = field(["a", "none", "b"], ["none"]);
+    expect(optionColor(middle, "b", light)?.color).toBe(hue(1));
+  });
+
+  it("gives the found option of a two-option field the first hue", () => {
+    const finding = field(["absent", "present"], ["absent"]);
+    expect(optionColor(finding, "present", light)?.color).toBe(hue(0));
+  });
+
+  it("gives option names no meaning of their own", () => {
+    const flag = field(["no", "yes"]);
+    expect(optionColor(flag, "no", light)?.color).toBe(hue(0));
+    expect(optionColor(flag, "yes", light)?.color).toBe(hue(1));
+  });
+});
+
 describe("optionStyle", () => {
-  it("tints by option index at the scheme's opacity, with readable text", () => {
+  it("tints by option position at the scheme's opacity, with readable text", () => {
     const kinds = field(["task_work", "mapping"]);
     expect(optionStyle(kinds, "task_work", [], light)).toEqual(tint(hue(0)));
     expect(optionStyle(kinds, "mapping", [], light)).toEqual(tint(hue(1)));
@@ -75,35 +105,44 @@ describe("optionStyle", () => {
   });
 
   it.each([
-    ["yes", "no", ["yes", "no"]],
-    ["yes", "no", ["no", "yes"]],
-    ["1", "0", ["1", "0"]],
-    ["1", "0", ["0", "1"]],
-  ])("tints %s strongly and leaves %s untinted in %j", (on, off, options) => {
-    const flag = field(options);
-    expect(optionStyle(flag, on, [], light)).toEqual(tint(hues.yes));
-    expect(optionStyle(flag, off, [], light)).toBeUndefined();
+    [["absent", "present"], ["absent"]],
+    [["present", "absent"], ["absent"]],
+    [["clean", "minor", "severe"], ["clean"]],
+  ])("leaves negative options untinted in %j", (options, negative) => {
+    const finding = field(options, negative);
+    for (const option of negative) {
+      expect(optionStyle(finding, option, [], light)).toBeUndefined();
+    }
+    const [first] = options.filter((o) => !negative.includes(o));
+    expect(first && optionStyle(finding, first, [], light)).toEqual(
+      tint(hue(0))
+    );
   });
 
-  it("tints other two-option fields by index", () => {
-    const awareness = field(["no", "checking_work"]);
-    expect(optionStyle(awareness, "no", [], light)).toEqual(tint(hue(0)));
-  });
-
-  it("reuses hues hatched past the eight-colour palette", () => {
-    const many = field(Array.from({ length: 18 }, (_, i) => `o${i}`));
+  it("reuses hues hatched past the eight-colour palette, counting non-negative options", () => {
+    const many = field(
+      ["none", ...Array.from({ length: 18 }, (_, i) => `o${i}`)],
+      ["none"]
+    );
     expect(optionStyle(many, "o7", [], light)).toEqual(tint(hue(7)));
     const hatched = optionStyle(many, "o9", [], light);
     expect(hatched?.backgroundColor).toBeUndefined();
     expect(hatched?.backgroundImage).toContain(withAlpha(hue(1), 0.3));
-    expect(optionStyle(many, "o17", [], light)).toEqual(tint(hues.none));
+    expect(optionStyle(many, "o15", [], light)?.backgroundImage).toContain(
+      withAlpha(hue(7), 0.3)
+    );
+    expect(optionStyle(many, "o16", [], light)).toEqual(tint(hues.none));
   });
 
   it("fades spans the highlight leaves out, tinted or not", () => {
-    const flag = field(["yes", "no"]);
-    expect(optionStyle(flag, "yes", ["yes"], light)).toEqual(tint(hues.yes));
-    expect(optionStyle(flag, "no", ["yes"], light)).toEqual({ opacity: 0.3 });
-    expect(optionStyle(flag, undefined, ["yes"], light)).toEqual({
+    const finding = field(["absent", "present"], ["absent"]);
+    expect(optionStyle(finding, "present", ["present"], light)).toEqual(
+      tint(hue(0))
+    );
+    expect(optionStyle(finding, "absent", ["present"], light)).toEqual({
+      opacity: 0.3,
+    });
+    expect(optionStyle(finding, undefined, ["present"], light)).toEqual({
       opacity: 0.3,
     });
   });
@@ -136,16 +175,25 @@ describe("summaryOption", () => {
   });
 
   it.each([
+    [["absent", "present"], "present", "absent"],
     [["yes", "no"], "yes", "no"],
-    [["1", "0"], "1", "0"],
+    [["no", "yes"], "no", "yes"],
   ])(
-    "passes over the untinted option of %j unless nothing else is there",
-    (options, on, off) => {
-      const flag = field(options);
-      expect(summaryOption(flag, [off, off, on, off], [])).toBe(on);
-      expect(summaryOption(flag, [off, off], [])).toBe(off);
+    "passes over a negative option of %j unless nothing else is there",
+    (options, found, negative) => {
+      const finding = field(options, [negative]);
+      expect(
+        summaryOption(finding, [negative, negative, found, negative], [])
+      ).toBe(found);
+      expect(summaryOption(finding, [negative, negative], [])).toBe(negative);
     }
   );
+
+  it("counts every option alike without negative options", () => {
+    expect(summaryOption(field(["yes", "no"]), ["no", "no", "yes"], [])).toBe(
+      "no"
+    );
+  });
 
   it("counts only highlighted options when some are there", () => {
     const labels = ["task_work", "task_work", "reporting"];

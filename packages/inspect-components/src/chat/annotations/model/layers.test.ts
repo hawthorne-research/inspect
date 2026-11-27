@@ -13,13 +13,9 @@ import type {
   ContentText,
 } from "@tsmono/inspect-common/types";
 
-import { kMergedSystemMessageId, resolveMessages } from "..";
-
 import {
   codePointOffsets,
   collectAnnotationLayers,
-  findPart,
-  hasAnnotatedPart,
   spanText,
   type ResolvedPart,
 } from "./layers";
@@ -249,48 +245,5 @@ describe("codePointOffsets", () => {
   it("counts a lone surrogate as one code point, like Array.from", () => {
     const text = "a\ud800b";
     expect(codePointOffsets(text)).toHaveLength(Array.from(text).length + 1);
-  });
-});
-
-describe("findPart", () => {
-  const layer = resolvedLayer(
-    rawLayer({
-      parts: [
-        rawPart({
-          message_id: "s1",
-          starts: [0],
-          ends: [2],
-          values: { deception: [1] },
-        }),
-        rawPart(),
-        rawPart({
-          message_id: "a1",
-          content_index: 1,
-          starts: [0],
-          ends: [4],
-          values: { deception: [1] },
-        }),
-      ],
-    }),
-    kMessages
-  );
-
-  it("finds a string content's part and an array content's part", () => {
-    const [, user, assistant, tool] = kMessages;
-    if (!user || !assistant || !tool) throw new Error();
-    expect(findPart(layer, user, null)?.messageId).toBe("u1");
-    expect(findPart(layer, assistant, 0)).toBeUndefined();
-    expect(findPart(layer, assistant, 1)?.contentIndex).toBe(1);
-    expect(hasAnnotatedPart(layer, assistant)).toBe(true);
-    expect(hasAnnotatedPart(layer, tool)).toBe(false);
-  });
-
-  it("maps the merged system row back to its system messages", () => {
-    const [systemRow] = resolveMessages(kMessages);
-    const message = systemRow?.message;
-    if (!message) throw new Error();
-    expect(message.id).toBe(kMergedSystemMessageId);
-    expect(findPart(layer, message, 0)?.messageId).toBe("s1");
-    expect(hasAnnotatedPart(layer, message)).toBe(true);
   });
 });

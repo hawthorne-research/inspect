@@ -1,8 +1,7 @@
-import type { CSSProperties } from "react";
-
 import { summaryOption } from "./categorical";
 import { spanText, type ResolvedPart } from "./layers";
 import { formatValue, peakIndex } from "./numeric";
+import type { SpanStyle } from "./schemes";
 import { spanStyle, type AnnotationView } from "./view";
 
 /** Addresses one span of a layer: its part's `index`, and the span's index
@@ -24,7 +23,7 @@ export interface StripSegment {
   count: number;
   /** What the shown span stands for, e.g. an option or a peak value. */
   label: string;
-  style: CSSProperties | undefined;
+  style: SpanStyle | undefined;
   /** The number on the shown span's message chip in the Messages tab. */
   messageNumber: number;
   /** A message other than the previous segment's begins in the segment. */

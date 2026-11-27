@@ -4,8 +4,7 @@ import { FC, ReactNode } from "react";
 import styles from "./AnnotatedPart.module.css";
 import { useAnnotationView } from "./context";
 import { kPartAttribute, kSpanAttribute } from "./dom";
-import type { ResolvedPart } from "./layers";
-import { spanStyle, type AnnotationView } from "./view";
+import { spanStyle, type AnnotationView, type ResolvedPart } from "./model";
 
 interface AnnotatedPartProps {
   part: ResolvedPart;

@@ -4,22 +4,27 @@ import { FC } from "react";
 import { SegmentedControl } from "@tsmono/react/components";
 
 import styles from "./AnnotationLegend.module.css";
-import { countOptions, optionStyle } from "./categorical";
 import {
-  fieldLabel,
-  metadataText,
+  countOptions,
+  fieldDetails,
+  fieldTitle,
+  formatValue,
+  metadataEntries,
+  optionStyle,
+  paletteColors,
   spanCountLabel,
+  withAlpha,
   type AnnotationField,
+  type AnnotationView,
   type CategoricalField,
-} from "./format";
-import type { ResolvedLayer } from "./layers";
-import { formatValue } from "./numeric";
+  type Palette,
+  type ResolvedLayer,
+  type SpanLocation,
+  type StripSegment,
+} from "./model";
 import { OverviewStrip } from "./OverviewStrip";
-import { paletteColors, withAlpha, type Palette } from "./schemes";
 import { SpanTooltip } from "./SpanTooltip";
-import type { SpanLocation, StripSegment } from "./strip";
 import { Swatch } from "./Swatch";
-import type { AnnotationView } from "./view";
 
 // A few short field names fit a segmented control; more fields, or long
 // names, go in a select.
@@ -82,9 +87,7 @@ export const AnnotationLegend: FC<AnnotationLegendProps> = ({
         <span className={styles.source}>
           {[
             layer.source,
-            ...Object.entries(layer.metadata).map(
-              ([key, value]) => `${key}: ${metadataText(value)}`
-            ),
+            ...metadataEntries(layer.metadata),
             spanCountLabel(layer.spanCount, layer.unit),
           ]
             .filter((s) => s !== "")
@@ -161,19 +164,12 @@ const FieldPicker: FC<{
   selected: AnnotationField;
   onChange: (name: string) => void;
 }> = ({ fields, selected, onChange }) => (
-  <span
-    className={styles.fieldPicker}
-    title={
-      selected.description
-        ? `${selected.name}: ${selected.description}`
-        : undefined
-    }
-  >
+  <span className={styles.fieldPicker} title={detailedTitle(selected)}>
     <span className="text-style-secondary">Color by</span>
     {fields.length <= kMaxSegmentedFields &&
-    fields.every((f) => fieldLabel(f).length <= kMaxSegmentedLabel) ? (
+    fields.every((f) => f.name.length <= kMaxSegmentedLabel) ? (
       <SegmentedControl
-        segments={fields.map((f) => ({ id: f.name, label: fieldLabel(f) }))}
+        segments={fields.map((f) => ({ id: f.name, label: f.name }))}
         selectedId={selected.name}
         onSegmentChange={onChange}
       />
@@ -185,12 +181,8 @@ const FieldPicker: FC<{
         onChange={(e) => onChange(e.target.value)}
       >
         {fields.map((f) => (
-          <option
-            key={f.name}
-            value={f.name}
-            title={f.description ?? undefined}
-          >
-            {fieldLabel(f)}
+          <option key={f.name} value={f.name} title={detailedTitle(f)}>
+            {f.name}
           </option>
         ))}
       </select>
@@ -198,8 +190,12 @@ const FieldPicker: FC<{
   </span>
 );
 
-/** Each option's tint and count; clicking options highlights their
- *  spans. */
+/** The field's title when it has more to show than its name. */
+const detailedTitle = (field: AnnotationField): string | undefined =>
+  fieldDetails(field).length > 0 ? fieldTitle(field) : undefined;
+
+/** Each option's tint (none for a negative option) and count; clicking
+ *  options highlights their spans. */
 const OptionKey: FC<{
   layer: ResolvedLayer;
   field: CategoricalField;

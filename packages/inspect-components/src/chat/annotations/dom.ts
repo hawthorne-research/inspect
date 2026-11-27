@@ -1,5 +1,4 @@
-import type { ResolvedLayer, ResolvedPart } from "./layers";
-import type { SpanLocation } from "./strip";
+import type { ResolvedLayer, ResolvedPart, SpanLocation } from "./model";
 
 // Spans are found by attribute, not per-span handlers: a sample can hold
 // tens of thousands of them.

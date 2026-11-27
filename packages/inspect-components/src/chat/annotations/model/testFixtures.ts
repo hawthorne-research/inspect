@@ -20,20 +20,23 @@ export const suspectsField = {
   description: null,
   type: "categorical",
   options: ["yes", "no"],
+  negative: ["no"],
 };
 
-export const flagField = {
-  name: "flag",
+/** A field whose negative option's name says nothing about it. */
+export const findingField = {
+  name: "finding",
   description: null,
   type: "categorical",
-  options: ["1", "0"],
+  options: ["absent", "present"],
+  negative: ["absent"],
 };
 
 export const probeField = {
   name: "deception",
   description: "Linear probe",
   type: "numeric",
-  model_layer: 12,
+  metadata: { layer: 12, method: "logistic regression" },
 };
 
 export const rawPart = (overrides: Record<string, unknown> = {}) => ({
@@ -57,7 +60,7 @@ export const rawLayer = (overrides: Record<string, unknown> = {}) => ({
 });
 
 export const rawAnnotations = (layers: unknown[] = [rawLayer()]) => ({
-  version: 0,
+  version: 1,
   layers,
 });
 

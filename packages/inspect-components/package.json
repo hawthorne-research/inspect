@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./chat": "./src/chat/index.ts",
     "./chat/annotations": "./src/chat/annotations/index.ts",
+    "./chat/annotations/model": "./src/chat/annotations/model/index.ts",
     "./chat/test-helpers": "./src/chat/testFixtures.ts",
     "./chat/tools": "./src/chat/tools/tool.ts",
     "./columnFilter": "./src/columnFilter/index.ts",

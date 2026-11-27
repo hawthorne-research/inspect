@@ -1,8 +1,6 @@
 import type { ChatMessage, Score } from "@tsmono/inspect-common/types";
 import { isRecord } from "@tsmono/util";
 
-import { kMergedSystemMessageId, type Message } from "..";
-
 import {
   fail,
   kTextAnnotationsKey,
@@ -39,9 +37,8 @@ export interface ResolvedLayer extends Omit<AnnotationLayer, "parts"> {
   /** In transcript order: message order, then content index. */
   parts: readonly ResolvedPart[];
   spanCount: number;
+  /** Parts by `partKey` of their message id and content index. */
   partsByKey: ReadonlyMap<string, ResolvedPart>;
-  /** Parts of the chat's merged system row, by its content entries. */
-  systemParts: readonly (ResolvedPart | undefined)[];
 }
 
 export interface CollectedLayers {
@@ -177,44 +174,8 @@ export const resolveLayer = (
       parts,
       spanCount,
       partsByKey,
-      systemParts: mergedSystemParts(partsByKey, messages),
     },
   };
-};
-
-/** The part of `layer` that annotates part `contentIndex` of `message` as
- *  the chat renders it. The chat's merged system row maps its entries back
- *  to the system messages they came from. */
-export const findPart = (
-  layer: ResolvedLayer,
-  message: Message,
-  contentIndex: number | null
-): ResolvedPart | undefined => {
-  if (!message.id) return undefined;
-  if (message.id !== kMergedSystemMessageId) {
-    return layer.partsByKey.get(partKey(message.id, contentIndex));
-  }
-  if (
-    contentIndex === null ||
-    typeof message.content === "string" ||
-    message.content.length !== layer.systemParts.length
-  ) {
-    return undefined;
-  }
-  return layer.systemParts[contentIndex];
-};
-
-/** Whether any part of `message`, as the chat renders it, is annotated. */
-export const hasAnnotatedPart = (
-  layer: ResolvedLayer,
-  message: Message
-): boolean => {
-  if (typeof message.content === "string") {
-    return findPart(layer, message, null) !== undefined;
-  }
-  return message.content.some(
-    (_, index) => findPart(layer, message, index) !== undefined
-  );
 };
 
 /** The text that span offsets index into: a text part's `text`, a
@@ -254,20 +215,3 @@ export const codePointOffsets = (text: string): number[] => {
 /** The text of span `span` of `part`. */
 export const spanText = (part: ResolvedPart, span: number): string =>
   part.text.slice(part.starts[span] ?? 0, part.ends[span] ?? 0);
-
-/** One entry per content entry of the merged system row (a string content
- *  counts as one entry), mirroring `mergedSystemMessage`. */
-const mergedSystemParts = (
-  partsByKey: ReadonlyMap<string, ResolvedPart>,
-  messages: readonly ChatMessage[]
-): (ResolvedPart | undefined)[] =>
-  messages.flatMap((message) => {
-    if (message.role !== "system") return [];
-    const id = message.id;
-    if (typeof message.content === "string") {
-      return [id ? partsByKey.get(partKey(id, null)) : undefined];
-    }
-    return message.content.map((_, index) =>
-      id ? partsByKey.get(partKey(id, index)) : undefined
-    );
-  });

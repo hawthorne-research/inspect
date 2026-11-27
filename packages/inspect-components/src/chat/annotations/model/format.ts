@@ -3,19 +3,27 @@ import { getOwn, isRecord } from "@tsmono/util";
 /** Score metadata key that carries annotations of transcript text. */
 export const kTextAnnotationsKey = "text_annotations";
 
+/** The one version of the format this module reads. */
+export const kFormatVersion = 1;
+
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** JSON values by key, e.g. `{ tokenizer: "tiktoken/o200k_base" }`: how
+ *  a layer or field was made, shown as it is. */
+export type AnnotationMetadata = Readonly<Record<string, unknown>>;
 
 interface FieldBase {
   name: string;
   description: string | null;
-  /** The model layer a probe read, when the values come from one; always
-   *  null for a categorical field, which the format gives none. */
-  modelLayer: number | null;
+  metadata: AnnotationMetadata;
 }
 
 export interface CategoricalField extends FieldBase {
   type: "categorical";
   options: readonly string[];
+  /** Options that mean "nothing found", e.g. the "no" of a yes/no field;
+   *  never every option. */
+  negative: readonly string[];
 }
 
 export interface NumericField extends FieldBase {
@@ -49,9 +57,7 @@ export interface AnnotationLayer {
   unit: string;
   /** What produced the values. */
   source: string;
-  /** How the layer was made, e.g. `{ tokenizer: "tiktoken/o200k_base" }`:
-   *  JSON values by key, shown as they are. */
-  metadata: Readonly<Record<string, unknown>>;
+  metadata: AnnotationMetadata;
   description: string | null;
   fields: readonly AnnotationField[];
   parts: readonly AnnotationPart[];
@@ -66,7 +72,7 @@ export const parseTextAnnotations = (
   raw: unknown
 ): Parsed<Parsed<AnnotationLayer>[]> => {
   if (!isRecord(raw)) return fail(`${kTextAnnotationsKey} is not an object`);
-  if (raw["version"] !== 0) {
+  if (raw["version"] !== kFormatVersion) {
     return fail(`unsupported version ${String(raw["version"])}`);
   }
   const rawLayers = raw["layers"];
@@ -94,7 +100,7 @@ const parseLayer = (raw: unknown): Parsed<AnnotationLayer> => {
   const name = raw["name"];
   const unit = raw["unit"];
   const source = raw["source"];
-  const metadata = raw["metadata"] === undefined ? {} : raw["metadata"];
+  const metadata = orDefault(raw["metadata"], {});
   const description = raw["description"] ?? null;
   if (typeof name !== "string" || !name) {
     return fail("name is not a non-empty string");
@@ -158,12 +164,14 @@ const parseField = (raw: unknown): Parsed<AnnotationField> => {
   if (!isRecord(raw)) return fail("not an object");
   const name = raw["name"];
   const description = raw["description"] ?? null;
+  const metadata = orDefault(raw["metadata"], {});
   if (typeof name !== "string" || !name) {
     return fail("name is not a non-empty string");
   }
   if (description !== null && typeof description !== "string") {
     return fail("description is not a string");
   }
+  if (!isRecord(metadata)) return fail("metadata is not an object");
   const type = raw["type"];
   if (type === "categorical") {
     const options = raw["options"];
@@ -173,19 +181,40 @@ const parseField = (raw: unknown): Parsed<AnnotationField> => {
       return fail("options are not unique");
     }
     if (options.length < 2) return fail("fewer than two options");
+    const negative = parseNegative(orDefault(raw["negative"], []), options);
+    if (!negative.ok) return negative;
     return {
       ok: true,
-      value: { type, name, description, modelLayer: null, options },
+      value: {
+        type,
+        name,
+        description,
+        metadata,
+        options,
+        negative: negative.value,
+      },
     };
   }
   if (type === "numeric") {
-    const modelLayer = raw["model_layer"] ?? null;
-    if (modelLayer !== null && !isFiniteNumber(modelLayer)) {
-      return fail("model_layer is not a number");
-    }
-    return { ok: true, value: { type, name, description, modelLayer } };
+    return { ok: true, value: { type, name, description, metadata } };
   }
   return fail(`unknown type ${String(type)}`);
+};
+
+const parseNegative = (
+  raw: unknown,
+  options: readonly string[]
+): Parsed<string[]> => {
+  if (!isStringArray(raw)) return fail("negative is not a list of strings");
+  const unknown = raw.find((option) => !options.includes(option));
+  if (unknown !== undefined) {
+    return fail(`negative option ${unknown} is not an option`);
+  }
+  if (new Set(raw).size !== raw.length) return fail("negative has repeats");
+  if (raw.length === options.length) {
+    return fail("every option is negative");
+  }
+  return { ok: true, value: raw };
 };
 
 const parsePart = (
@@ -312,6 +341,10 @@ export const partKey = (
   contentIndex: number | null
 ): string => `${messageId}[${contentIndex ?? "content"}]`;
 
+/** `value`, or `fallback` when the key is missing; null is not missing. */
+const orDefault = (value: unknown, fallback: unknown): unknown =>
+  value === undefined ? fallback : value;
+
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
@@ -331,18 +364,3 @@ export const fail = (error: string): { ok: false; error: string } => ({
   ok: false,
   error,
 });
-
-/** A field's name, with the model layer a probe read, if any. */
-export const fieldLabel = (field: AnnotationField): string =>
-  field.modelLayer !== null
-    ? `${field.name} · layer ${field.modelLayer}`
-    : field.name;
-
-/** A number of spans with the layer's unit, e.g. "10,226 tokens". */
-export const spanCountLabel = (count: number, unit: string): string =>
-  `${count.toLocaleString()} ${count === 1 ? unit : `${unit}s`}`;
-
-/** A layer metadata value as text: strings as they are, other values as
- *  JSON. */
-export const metadataText = (value: unknown): string =>
-  typeof value === "string" ? value : JSON.stringify(value);

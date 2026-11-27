@@ -1,8 +1,12 @@
-import type { CSSProperties } from "react";
-
 import type { NumericField } from "./format";
 import type { ResolvedLayer } from "./layers";
-import { paletteColors, textOn, withAlpha, type Palette } from "./schemes";
+import {
+  paletteColors,
+  textOn,
+  withAlpha,
+  type Palette,
+  type SpanStyle,
+} from "./schemes";
 
 /** The quantile of |value| drawn at full colour: a few outliers clip
  *  instead of washing out every other span. */
@@ -72,13 +76,13 @@ export const valueIntensity = (value: number, scale: number): number =>
  *  spans whose colour didn't change. */
 const kSteps = 100;
 
-const kStyles = new Map<string, (CSSProperties | undefined)[]>();
+const kStyles = new Map<string, (SpanStyle | undefined)[]>();
 
 /** The shades of one sign's hue in `palette`, from clear to full. */
 const shades = (
   palette: Palette,
   sign: "negative" | "positive"
-): (CSSProperties | undefined)[] => {
+): (SpanStyle | undefined)[] => {
   const key = `${palette.scheme.id}|${palette.dark}|${sign}`;
   const cached = kStyles.get(key);
   if (cached) return cached;
@@ -105,7 +109,7 @@ export const valueStyle = (
   value: number,
   scale: number,
   palette: Palette
-): CSSProperties | undefined => {
+): SpanStyle | undefined => {
   const intensity = valueIntensity(value, scale);
   const step = Math.round(Math.abs(intensity) * kSteps);
   return shades(palette, intensity > 0 ? "positive" : "negative")[step];

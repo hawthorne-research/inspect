@@ -18,6 +18,27 @@ export default tseslint.config(
       },
     },
   },
+  // The annotation model is shared by every view of annotations, so it
+  // stays free of React and of the components that draw it: it imports its
+  // own files and packages checked to be React-free, nothing else.
+  {
+    files: ["src/chat/annotations/model/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex:
+                "^(?!\\./|@tsmono/util$|@tsmono/inspect-common/(types|testing)$|vitest$)",
+              message:
+                "The annotation model imports only model/ files and React-free packages listed in eslint.config.js.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // Test helpers / fixture files — allow _-prefixed unused vars for API compat
   {
     files: ["**/*.test.ts", "**/testHelpers.ts", "**/syntheticNodes.ts"],

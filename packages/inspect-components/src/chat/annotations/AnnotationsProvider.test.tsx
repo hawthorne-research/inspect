@@ -26,17 +26,21 @@ import { ChatMessageRow, resolveMessages } from "..";
 import { AnnotationLegend } from "./AnnotationLegend";
 import { AnnotationsProvider } from "./AnnotationsProvider";
 import { kPartAttribute, kSpanAttribute } from "./dom";
-import type { ResolvedLayer } from "./layers";
-import { colorScheme, type Palette } from "./schemes";
-import { buildStrip } from "./strip";
 import {
+  buildStrip,
+  colorScheme,
+  type Palette,
+  type ResolvedLayer,
+} from "./model";
+import {
+  findingField,
   kindField,
   probeField,
   rawLayer,
   rawPart,
   resolvedLayer,
   viewOf,
-} from "./testFixtures";
+} from "./model/testFixtures";
 
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 
@@ -60,10 +64,10 @@ const kMessages: ChatMessage[] = [
 ];
 
 // Short spans on u1 ("**Hi**" | "🧭" | "there", with the spaces as gaps)
-// and two long ones on a1's reasoning paragraphs. Each span has a
-// categorical and a numeric value.
+// and two long ones on a1's reasoning paragraphs. Each span has two
+// categorical values and a numeric one.
 const kLayer = rawLayer({
-  fields: [kindField, probeField],
+  fields: [kindField, findingField, probeField],
   parts: [
     rawPart({
       message_id: "u1",
@@ -71,6 +75,7 @@ const kLayer = rawLayer({
       ends: [6, 8, 15],
       values: {
         kind: ["mapping", "mapping", "task_work"],
+        finding: ["present", "absent", "present"],
         deception: [2, 0, -2],
       },
       probabilities: {
@@ -86,7 +91,11 @@ const kLayer = rawLayer({
       content_index: 0,
       starts: [0, 11],
       ends: [9, 23],
-      values: { kind: ["mapping", "task_work"], deception: [1, 1] },
+      values: {
+        kind: ["mapping", "task_work"],
+        finding: ["absent", "absent"],
+        deception: [1, 1],
+      },
     }),
   ],
 });
@@ -111,7 +120,7 @@ const renderAnnotated = (
     <TrustedContentWrapper>
       <ComponentStateProvider hooks={makeStateHooks()}>
         <ComponentNavigationProvider navigation={{ navigate: () => {} }}>
-          <AnnotationsProvider view={view}>
+          <AnnotationsProvider view={view} messages={kMessages}>
             <AnnotationLegend
               view={view}
               layers={layers ?? [layer]}
@@ -210,6 +219,34 @@ describe("annotated parts", () => {
     );
   });
 
+  it("leave negative options untinted, fading them like others under a highlight", () => {
+    renderAnnotated("finding");
+    // u1's spans are present, absent, present.
+    expect(drawnPart("u1").spans.map(([, , tinted]) => tinted)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    cleanup();
+    renderAnnotated("finding", { highlight: ["absent"] });
+    expect(
+      spansIn(screen.getByTestId("u1")).map((s) => s.style.opacity)
+    ).toEqual(["0.3", "", "0.3"]);
+  });
+
+  it("show a field's description and metadata, whatever its keys, in the Color by picker and the tooltip", () => {
+    const details =
+      "deception\nLinear probe\nlayer: 12\nmethod: logistic regression";
+    renderAnnotated("deception");
+    expect(screen.getByText("Color by").parentElement?.title).toBe(details);
+    const [, , there] = spansIn(screen.getByTestId("u1"));
+    if (!there) throw new Error();
+    fireEvent.mouseOver(there);
+    const tooltip = screen.getByRole("tooltip");
+    expect(within(tooltip).getByText("deception").title).toBe(details);
+    expect(within(tooltip).getByText("finding").title).toBe("finding");
+  });
+
   it("fade the spans of options the legend's highlight leaves out", () => {
     renderAnnotated("kind", { highlight: ["task_work"] });
     expect(
@@ -224,7 +261,7 @@ describe("annotated parts", () => {
     fireEvent.mouseOver(there);
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.textContent).toContain('"there"');
-    expect(within(tooltip).getByText("deception · layer 12")).toBeTruthy();
+    expect(within(tooltip).getByText("deception")).toBeTruthy();
     expect(within(tooltip).getByText("-2")).toBeTruthy();
     expect(within(tooltip).getByText("kind")).toBeTruthy();
     expect(within(tooltip).getAllByText("task_work")).toHaveLength(2);
@@ -316,6 +353,23 @@ describe("the legend", () => {
         .getAllByRole("button")
         .map((b) => b.textContent)
     ).toEqual(["task_work2", "mapping3"]);
+  });
+
+  it("keeps a chip for each negative option, with its count and an empty swatch", () => {
+    renderAnnotated("finding");
+    const options = screen.getByRole("group", { name: "Options" });
+    const filled = (chip: HTMLElement) =>
+      Array.from(chip.querySelectorAll<HTMLElement>("span")).some(
+        (s) => s.style.backgroundColor !== ""
+      );
+    expect(
+      within(options)
+        .getAllByRole("button")
+        .map((b) => [b.textContent, filled(b)])
+    ).toEqual([
+      ["absent3", false],
+      ["present2", true],
+    ]);
   });
 
   it("shows a numeric field's scale instead of options", () => {
